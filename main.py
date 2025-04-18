@@ -1,6 +1,24 @@
 import os
 import datetime
 from telegram import Bot
+import datetime
+import holidays
+
+# Define Indian market open/close time
+market_start = datetime.time(9, 16)
+market_end = datetime.time(14, 59)
+
+# Define Indian holidays (using 'holidays' module)
+indian_holidays = holidays.India()
+
+def is_market_open():
+    now = datetime.datetime.now()
+    return (
+        now.date() not in indian_holidays
+        and market_start <= now.time() <= market_end
+        and now.weekday() < 5  # Mon-Fri
+    )
+
 
 # Load ENV
 telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
