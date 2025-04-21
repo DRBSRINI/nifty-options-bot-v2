@@ -1,60 +1,52 @@
+import datetime
 import os
-import datetime
 from telegram import Bot
-import datetime
-import holidays
+from apscheduler.schedulers.blocking import BlockingScheduler
 
-# Define Indian market open/close time
-market_start = datetime.time(9, 16)
-market_end = datetime.time(14, 59)
+bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+chat_id = os.getenv("TELEGRAM_CHAT_ID")
+bot = Bot(token=bot_token)
 
-# Define Indian holidays (using 'holidays' module)
-indian_holidays = holidays.India()
+scheduler = BlockingScheduler()
+
+last_alert_time = None
+next_option_type = "CE"
 
 def is_market_open():
     now = datetime.datetime.now()
-    return (
-        now.date() not in indian_holidays
-        and market_start <= now.time() <= market_end
-        and now.weekday() < 5  # Mon-Fri
+    if now.weekday() >= 5:  # Saturday & Sunday
+        return False
+    if now.hour < 9 or (now.hour == 9 and now.minute < 16):
+        return False
+    if now.hour > 15 or (now.hour == 15 and now.minute >= 30):
+        return False
+    return True
+
+def send_alert():
+    global last_alert_time, next_option_type
+
+    now = datetime.datetime.now()
+
+    # Skip if not market time
+    if not is_market_open():
+        return
+
+    # Avoid sending too frequently (set 5 min cool-down)
+    if last_alert_time and (now - last_alert_time).total_seconds() < 300:
+        return
+
+    strike_price = 101.25  # Dummy value, to be replaced with logic later
+    alert_message = (
+        f"🟢 Paper Trade Alert:\n"
+        f"NIFTY ATM {next_option_type} @ ₹{strike_price}\n"
+        f"Time: {now.strftime('%Y-%m-%d %H:%M:%S')}"
     )
 
+    bot.send_message(chat_id=chat_id, text=alert_message)
+    print(alert_message)
 
-# Load ENV
-telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
-chat_id = os.getenv("TELEGRAM_CHAT_ID")
-paper_mode = os.getenv("PAPER_MODE", "true").lower() == "true"
+    last_alert_time = now
+    next_option_type = "PE" if next_option_type == "CE" else "CE"
 
-# Time filtering: 9:16 AM to 2:59 PM IST
-def is_within_market_time():
-    now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
-    return now.time() >= datetime.time(9, 16) and now.time() <= datetime.time(14, 59)
-
-# Simulate alternating CE/PE
-state_file = "last_signal.txt"
-def get_next_signal():
-    if os.path.exists(state_file):
-        with open(state_file, "r") as f:
-            last = f.read().strip()
-    else:
-        last = "PE"
-    next_signal = "CE" if last == "PE" else "PE"
-    with open(state_file, "w") as f:
-        f.write(next_signal)
-    return next_signal
-
-# Telegram alert
-def send_alert(message):
-    if telegram_token and chat_id:
-        Bot(token=telegram_token).send_message(chat_id=chat_id, text=message)
-
-# Main loop
-if __name__ == "__main__":
-    if is_within_market_time():
-        instrument = f"NIFTY ATM {get_next_signal()}"
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        msg = f"🟢 Paper Trade Alert:\n{instrument} @ ₹101.25\nTime: {timestamp}"
-        print(msg)
-        send_alert(msg)
-    else:
-        print("⏱ Market closed: No alerts sent.")
+scheduler.add_job(send_alert, "interval", minutes=1)
+scheduler.start()
