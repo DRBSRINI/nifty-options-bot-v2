@@ -77,7 +77,7 @@ if os.getenv("REAL_MODE", "false").lower() == "true":
         order_id = alice.place_order(
             transaction_type=TransactionType.Buy,
             instrument=alice.get_instrument_by_symbol("NFO", order_symbol),
-            quantity=50,
+            quantity=75,
             order_type=OrderType.Market,
             product_type=ProductType.Intraday,
             price=0.0,
