@@ -18,7 +18,6 @@ api_secret = os.getenv("ALICEBLUE_API_SECRET")
 def get_alice_session():
     totp = pyotp.TOTP(alice_totp_secret).now()
     print(f"✅ Generated TOTP: {totp}")
-
     try:
         session_id = AliceBlue.login_and_get_sessionID(
             username=alice_user,
@@ -27,11 +26,12 @@ def get_alice_session():
             app_code=alice_app_code,
             api_secret=api_secret
         )
-        print(f"🔄 Raw Response from API: {session_id}")
+        print(f"📦 Raw Response from API: {session_id}")
         return AliceBlue(username=alice_user, session_id=session_id)
     except Exception as e:
         print(f"❌ Login failed: {e}")
         raise
+
 
 
 
