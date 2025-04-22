@@ -16,11 +16,8 @@ alice_totp_secret = os.getenv("ALICEBLUE_TOTP_SECRET")
 api_secret = os.getenv("ALICEBLUE_API_SECRET")
 
 def get_alice_session():
-    totp = pyotp.TOTP(alice_totp_secret).now()
     try:
-        def get_alice_session():
-    totp = pyotp.TOTP(alice_totp_secret).now()
-    try:
+        totp = pyotp.TOTP(alice_totp_secret).now()
         session_id = AliceBlue.login_and_get_sessionID(
             alice_user,
             alice_password,
@@ -32,6 +29,7 @@ def get_alice_session():
     except Exception as e:
         print(f"❌ Login failed: {e}")
         raise
+
 
 
 import pytz
