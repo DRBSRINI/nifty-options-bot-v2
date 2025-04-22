@@ -21,11 +21,13 @@ def get_alice_session():
 
     try:
         session_id = AliceBlue.login_and_get_sessionID(
-            username=alice_user,
-            password=alice_password,
-            twoFA=totp,
-            appID=alice_app_code,
-            api_secret=api_secret
+    username=alice_user,
+    password=alice_password,
+    twoFA=totp,
+    app_code=alice_app_code,    # ✅ FIXED HERE
+    api_secret=api_secret
+)
+
         )
         print(f"✅ Raw Response from API: {session_id}")
         return AliceBlue(username=alice_user, session_id=session_id)
