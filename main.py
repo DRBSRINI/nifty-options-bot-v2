@@ -26,11 +26,12 @@ def get_alice_session():
             totp,
             api_secret
         )
-        print(f"🔍 Raw Response from API (session_id): {session_id}")
+        print(f"🟢 Login Success: {session_id}")
         return AliceBlue(username=alice_user, session_id=session_id)
     except Exception as e:
         print(f"❌ Login failed: {e}")
         raise
+
 
 
 
