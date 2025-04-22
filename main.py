@@ -11,7 +11,7 @@ chat_id = os.getenv("TELEGRAM_CHAT_ID")
 bot = Bot(token=bot_token)
 alice_user = os.getenv("ALICEBLUE_USER_ID")
 alice_password = os.getenv("ALICEBLUE_PASSWORD")
-alice_app_code = os.getenv("ALICEBLUE_APP_CODE")
+
 alice_totp_secret = os.getenv("ALICEBLUE_TOTP_SECRET")
 api_secret = os.getenv("ALICEBLUE_API_SECRET")
 
@@ -21,19 +21,18 @@ def get_alice_session():
 
     try:
         session_id = AliceBlue.login_and_get_sessionID(
-    username=alice_user,
-    password=alice_password,
-    twoFA=totp,
-    app_code=alice_app_code,    # ✅ FIXED HERE
-    api_secret=api_secret
-)
-
+            username=alice_user,
+            password=alice_password,
+            twoFA=totp,
+            api_secret=api_secret,
+            imei="abc1234"
         )
-        print(f"✅ Raw Response from API: {session_id}")
+        print(f"🟢 Raw Response from API: {session_id}")
         return AliceBlue(username=alice_user, session_id=session_id)
     except Exception as e:
         print(f"❌ Login failed: {e}")
         raise
+
 
 
 
