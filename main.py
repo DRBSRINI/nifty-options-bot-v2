@@ -6,8 +6,11 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
 chat_id = os.getenv("TELEGRAM_CHAT_ID")
 bot = Bot(token=bot_token)
+import pytz
+IST = pytz.timezone("Asia/Kolkata")
 
-scheduler = BlockingScheduler()
+scheduler = BlockingScheduler(timezone=IST)
+
 
 last_alert_time = None
 next_option_type = "CE"
