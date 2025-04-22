@@ -61,7 +61,8 @@ def send_alert():
     print(alert_message)
     # Execute real order if REAL_MODE is enabled
 if os.getenv("REAL_MODE", "false").lower() == "true":
-    from alice_blue import TransactionType, OrderType, Variety, ProductType, AliceBlue
+    from alice_blue import TransactionType, OrderType, ProductType, AliceBlue
+
 
     alice = get_alice_session()
 
