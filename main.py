@@ -17,7 +17,12 @@ api_secret = os.getenv("ALICEBLUE_API_SECRET")
 
 def get_alice_session():
     totp = pyotp.TOTP(alice_totp_secret).now()
-    session = session = AliceBlue.login_and_get_sessionID(alice_user, alice_password, alice_app_code, totp, api_secret)
+    alice_api_secret = os.getenv("ALICEBLUE_API_SECRET")
+    session = AliceBlue.login_and_get_sessionID(
+        alice_user, alice_password, alice_app_code, alice_api_secret, totp
+    )
+    return AliceBlue(username=alice_user, session_id=session)
+
 
     return AliceBlue(username=alice_user, session_id=session)
 
