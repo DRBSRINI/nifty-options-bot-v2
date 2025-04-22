@@ -21,15 +21,14 @@ def get_alice_session():
 
     try:
         session_id = AliceBlue.login_and_get_sessionID(
-            alice_user,
-            alice_password,
-            alice_app_code,
-            totp,
-            api_secret
+            username=alice_user,
+            password=alice_password,
+            twoFA=totp,
+            app_code=alice_app_code,
+            api_secret=api_secret
         )
-        print(f"📨 Raw Response from API: {session_id}")
+        print(f"🔄 Raw Response from API: {session_id}")
         return AliceBlue(username=alice_user, session_id=session_id)
-
     except Exception as e:
         print(f"❌ Login failed: {e}")
         raise
