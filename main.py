@@ -19,14 +19,13 @@ def get_alice_session():
     totp = pyotp.TOTP(alice_totp_secret).now()
     try:
         session_id = AliceBlue.login_and_get_sessionID(
-    alice_user,
-    alice_password,
-    alice_app_code,
-    totp,
-    api_secret
+    username=alice_user,
+    password=alice_password,
+    app_code=alice_app_code,
+    twoFA=totp,
+    api_secret=api_secret
 )
 
-        )
         return AliceBlue(username=alice_user, session_id=session_id)
     except Exception as e:
         print(f"❌ Login failed: {e}")
