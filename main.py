@@ -55,23 +55,58 @@ def is_market_open():
 def send_alert():
     global last_alert_time, next_option_type
 
-    now = datetime.datetime.now(IST)
+    now = datetime.datetime.now()
+
+    # Skip if not market time
     if not is_market_open():
         return
+
+    # Avoid sending too frequently (set 5 min cool-down)
     if last_alert_time and (now - last_alert_time).total_seconds() < 300:
         return
 
-    strike_price = 101.25  # Dummy value
-    option_symbol = "NIFTY"
-    option_type = "CE" if next_option_type == "CE" else "PE"
-    order_symbol = f"{option_symbol}{option_type}"
+    # ✅ Proceed only if REAL_MODE is true
+    if os.getenv("REAL_MODE", "false").lower() == "true":
+        print("🔄 Starting bot... Getting AliceBlue session")
+        try:
+            alice = get_alice_session()
 
-    # Paper Alert
-    alert_message = (
-        f"🟢 Paper Trade Alert:\n"
-        f"{option_symbol} ATM {option_type} @ ₹{strike_price}\n"
-        f"Time: {now.strftime('%Y-%m-%d %H:%M:%S')}"
-    )
+            option_symbol = "NIFTY"
+            strike_price = 101.25  # Replace with live logic if needed
+
+            option_type = "CE" if next_option_type == "CE" else "PE"
+            order_symbol = f"{option_symbol}{option_type}"
+
+            order_id = alice.place_order(
+                transaction_type=TransactionType.Buy,
+                instrument=alice.get_instrument_by_symbol("NFO", order_symbol),
+                quantity=75,
+                order_type=OrderType.Market,
+                product_type=ProductType.Intraday,
+                price=0.0,
+                trigger_price=None,
+                stop_loss=None,
+                square_off=None,
+                trailing_sl=None,
+                is_amo=False
+            )
+
+            alert_message = (
+                f"✅ Real Order Placed:\n"
+                f"{option_symbol} ATM {option_type} @ ₹{strike_price}\n"
+                f"Order ID: {order_id}\n"
+                f"Time: {now.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            bot.send_message(chat_id=chat_id, text=alert_message)
+            print(alert_message)
+
+        except Exception as e:
+            print(f"❌ Order Failed: {e}")
+
+        # Alternate between CE and PE
+        last_alert_time = now
+        next_option_type = "PE" if next_option_type == "CE" else "CE"
+
     bot.send_message(chat_id=chat_id, text=alert_message)
     print(alert_message)
 
