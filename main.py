@@ -1,23 +1,25 @@
-import os
 import datetime
-import pyotp
+import os
 import pytz
+import pyotp
 from apscheduler.schedulers.blocking import BlockingScheduler
 from telegram import Bot
 from alice_blue import AliceBlue, TransactionType, OrderType, ProductType
 
-# ---- Load Secrets ----
+# === ENV VARS ===
 bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
 chat_id = os.getenv("TELEGRAM_CHAT_ID")
-bot = Bot(token=bot_token)
-
 alice_user = os.getenv("ALICEBLUE_USER_ID")
 alice_password = os.getenv("ALICEBLUE_PASSWORD")
 alice_totp_secret = os.getenv("ALICEBLUE_TOTP_SECRET")
+alice_app_code = os.getenv("ALICEBLUE_APP_CODE")  # ✅ correct key
 api_secret = os.getenv("ALICEBLUE_API_SECRET")
-alice_app_code = os.getenv("ALICEBLUE_APP_CODE")
 
-# ---- AliceBlue Session ----
+REAL_MODE = os.getenv("REAL_MODE", "false").lower() == "true"
+
+bot = Bot(token=bot_token)
+
+# === AliceBlue Session ===
 def get_alice_session():
     totp = pyotp.TOTP(alice_totp_secret).now()
     print(f"✅ Generated TOTP: {totp}")
@@ -28,7 +30,7 @@ def get_alice_session():
             username=alice_user,
             password=alice_password,
             twoFA=totp,
-            vendor_code=alice_app_code,
+            vendor_code=alice_app_code,  # ✅ correct key name
             api_secret=api_secret
         )
         print(f"🟢 Raw Response from API: {session_id}")
@@ -37,54 +39,46 @@ def get_alice_session():
         print(f"❌ Login failed: {e}")
         raise
 
-# ---- Timezone Setup ----
+# === Timezone Setup ===
 IST = pytz.timezone("Asia/Kolkata")
 scheduler = BlockingScheduler(timezone=IST)
 
-# ---- Market Status & Logic ----
+# === Market Logic ===
 last_alert_time = None
 next_option_type = "CE"
 
 def is_market_open():
     now = datetime.datetime.now(IST)
-    if now.weekday() >= 5:
-        return False
-    if now.hour < 9 or (now.hour == 9 and now.minute < 16):
-        return False
-    if now.hour > 15 or (now.hour == 15 and now.minute >= 30):
-        return False
-    return True
+    return now.weekday() < 5 and datetime.time(9, 16) <= now.time() <= datetime.time(15, 30)
 
-# ---- Send Alert and Place Order ----
+# === Alert + Trade ===
 def send_alert():
     global last_alert_time, next_option_type
 
     now = datetime.datetime.now(IST)
     if not is_market_open():
         return
-
     if last_alert_time and (now - last_alert_time).total_seconds() < 300:
         return
 
-    strike_price = 101.25  # Dummy static value for now
+    strike_price = 101.25  # Dummy value
+    option_symbol = "NIFTY"
+    option_type = "CE" if next_option_type == "CE" else "PE"
+    order_symbol = f"{option_symbol}{option_type}"
+
+    # Paper Alert
     alert_message = (
         f"🟢 Paper Trade Alert:\n"
-        f"NIFTY ATM {next_option_type} @ ₹{strike_price}\n"
+        f"{option_symbol} ATM {option_type} @ ₹{strike_price}\n"
         f"Time: {now.strftime('%Y-%m-%d %H:%M:%S')}"
     )
     bot.send_message(chat_id=chat_id, text=alert_message)
     print(alert_message)
 
-    print("✅ REAL_MODE is set to:", os.getenv("REAL_MODE"))
-    if os.getenv("REAL_MODE", "false").lower() == "true":
-        print("🚀 REAL_MODE is TRUE: Attempting to place a real order...")
-        alice = get_alice_session()
-
-        option_symbol = "NIFTY"
-        option_type = "CE" if next_option_type == "CE" else "PE"
-        order_symbol = f"{option_symbol}{option_type}"
-
+    # Real Order
+    if REAL_MODE:
         try:
+            alice = get_alice_session()
             order_id = alice.place_order(
                 transaction_type=TransactionType.Buy,
                 instrument=alice.get_instrument_by_symbol("NFO", order_symbol),
@@ -101,12 +95,11 @@ def send_alert():
             print(f"✅ Order Placed: {order_id}")
         except Exception as e:
             print(f"❌ Order Failed: {e}")
-    else:
-        print("🟡 REAL_MODE is FALSE: Only paper alerts will be sent.")
 
+    # Flip CE/PE for next time
     last_alert_time = now
     next_option_type = "PE" if next_option_type == "CE" else "CE"
 
-# ---- Start Bot Scheduler ----
+# === Scheduler Start ===
 scheduler.add_job(send_alert, "interval", minutes=1)
 scheduler.start()
