@@ -1,5 +1,7 @@
 python-telegram-bot==13.15
 holidays
+--upgrade
+
 alice-blue==2.0.4
 pyotp
 apscheduler
