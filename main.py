@@ -13,8 +13,8 @@ bot = Bot(token=bot_token)
 alice_user = os.getenv("ALICEBLUE_USER_ID")
 alice_password = os.getenv("ALICEBLUE_PASSWORD")
 alice_totp_secret = os.getenv("ALICEBLUE_TOTP_SECRET")
-alice_app_code = os.getenv("ALICEBLUE_APP_CODE")
 api_secret = os.getenv("ALICEBLUE_API_SECRET")
+alice_app_code = os.getenv("ALICEBLUE_APP_CODE")
 
 # === AliceBlue Session ===
 def get_alice_session():
