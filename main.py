@@ -1,36 +1,34 @@
-import datetime
 import os
+import datetime
+from telegram import Bot
+from apscheduler.schedulers.blocking import BlockingScheduler
+from alice_blue import AliceBlue, TransactionType, OrderType, ProductType
 import pytz
 import pyotp
-from apscheduler.schedulers.blocking import BlockingScheduler
-from telegram import Bot
-from alice_blue import AliceBlue, TransactionType, OrderType, ProductType
 
-# === ENV VARS ===
+# === Load credentials from environment ===
 bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
 chat_id = os.getenv("TELEGRAM_CHAT_ID")
 alice_user = os.getenv("ALICEBLUE_USER_ID")
 alice_password = os.getenv("ALICEBLUE_PASSWORD")
+alice_app_code = os.getenv("ALICEBLUE_APP_CODE")  # Vendor Code
 alice_totp_secret = os.getenv("ALICEBLUE_TOTP_SECRET")
-alice_app_code = os.getenv("ALICEBLUE_APP_CODE")  # ✅ correct key
 api_secret = os.getenv("ALICEBLUE_API_SECRET")
-
-REAL_MODE = os.getenv("REAL_MODE", "false").lower() == "true"
+real_mode = os.getenv("REAL_MODE", "false").lower() == "true"
 
 bot = Bot(token=bot_token)
 
-# === AliceBlue Session ===
+# === Get session ===
 def get_alice_session():
     totp = pyotp.TOTP(alice_totp_secret).now()
     print(f"✅ Generated TOTP: {totp}")
     print("🔄 Starting bot... Getting AliceBlue session")
-
     try:
         session_id = AliceBlue.login_and_get_sessionID(
             username=alice_user,
             password=alice_password,
             twoFA=totp,
-            vendor_code=alice_app_code,  # ✅ correct key name
+            vendor_code=alice_app_code,
             api_secret=api_secret
         )
         print(f"🟢 Raw Response from API: {session_id}")
@@ -43,76 +41,33 @@ def get_alice_session():
 IST = pytz.timezone("Asia/Kolkata")
 scheduler = BlockingScheduler(timezone=IST)
 
-# === Market Logic ===
 last_alert_time = None
 next_option_type = "CE"
 
+# === Market Hours Check ===
 def is_market_open():
     now = datetime.datetime.now(IST)
-    return now.weekday() < 5 and datetime.time(9, 16) <= now.time() <= datetime.time(15, 30)
+    if now.weekday() >= 5:
+        return False
+    return datetime.time(9, 16) <= now.time() <= datetime.time(14, 59)
 
-# === Alert + Trade ===
+# === Main Trading Function ===
 def send_alert():
     global last_alert_time, next_option_type
 
-    now = datetime.datetime.now()
-
-    # Skip if not market time
+    now = datetime.datetime.now(IST)
     if not is_market_open():
         return
-
-    # Avoid sending too frequently (set 5 min cool-down)
-    if last_alert_time and (now - last_alert_time).total_seconds() < 300:
+    if last_alert_time and (now - last_alert_time).total_seconds() < 60:
         return
 
-    # ✅ Proceed only if REAL_MODE is true
-    if os.getenv("REAL_MODE", "false").lower() == "true":
-        print("🔄 Starting bot... Getting AliceBlue session")
-        try:
-            alice = get_alice_session()
+    strike_price = 101.25  # 🔁 Replace with dynamic logic later
+    option_symbol = "NIFTY"
+    option_type = next_option_type
+    order_symbol = f"{option_symbol}{option_type}"
 
-            option_symbol = "NIFTY"
-            strike_price = 101.25  # Replace with live logic if needed
-
-            option_type = "CE" if next_option_type == "CE" else "PE"
-            order_symbol = f"{option_symbol}{option_type}"
-
-            order_id = alice.place_order(
-                transaction_type=TransactionType.Buy,
-                instrument=alice.get_instrument_by_symbol("NFO", order_symbol),
-                quantity=75,
-                order_type=OrderType.Market,
-                product_type=ProductType.Intraday,
-                price=0.0,
-                trigger_price=None,
-                stop_loss=None,
-                square_off=None,
-                trailing_sl=None,
-                is_amo=False
-            )
-
-            alert_message = (
-                f"✅ Real Order Placed:\n"
-                f"{option_symbol} ATM {option_type} @ ₹{strike_price}\n"
-                f"Order ID: {order_id}\n"
-                f"Time: {now.strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            bot.send_message(chat_id=chat_id, text=alert_message)
-            print(alert_message)
-
-        except Exception as e:
-            print(f"❌ Order Failed: {e}")
-
-        # Alternate between CE and PE
-        last_alert_time = now
-        next_option_type = "PE" if next_option_type == "CE" else "CE"
-
-    bot.send_message(chat_id=chat_id, text=alert_message)
-    print(alert_message)
-
-    # Real Order
-    if REAL_MODE:
-        try:
+    try:
+        if real_mode:
             alice = get_alice_session()
             order_id = alice.place_order(
                 transaction_type=TransactionType.Buy,
@@ -128,13 +83,17 @@ def send_alert():
                 is_amo=False
             )
             print(f"✅ Order Placed: {order_id}")
-        except Exception as e:
-            print(f"❌ Order Failed: {e}")
+            alert_message = (
+                f"✅ LIVE TRADE: NIFTY {option_type} BUY @ ₹{strike_price}\n"
+                f"Order ID: {order_id}\nTime: {now.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            bot.send_message(chat_id=chat_id, text=alert_message)
+    except Exception as e:
+        print(f"❌ Order Failed: {e}")
 
-    # Flip CE/PE for next time
     last_alert_time = now
     next_option_type = "PE" if next_option_type == "CE" else "CE"
 
-# === Scheduler Start ===
+# === Schedule Job ===
 scheduler.add_job(send_alert, "interval", minutes=1)
 scheduler.start()
