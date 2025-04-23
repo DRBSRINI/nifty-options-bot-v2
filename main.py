@@ -26,7 +26,7 @@ def get_alice_session():
     username=alice_user,
     password=alice_password,
     twoFA=totp,
-    api_secret=api_secret
+    app_id=api_secret
 )
 
         print(f"🟢 Raw Response from API: {session_id}")
