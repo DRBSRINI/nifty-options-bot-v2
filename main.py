@@ -1,30 +1,34 @@
 import datetime
 import os
-from telegram import Bot
-from alice_blue import AliceBlue, TransactionType, OrderType, ProductType
 import pyotp
-from apscheduler.schedulers.blocking import BlockingScheduler
 import pytz
+from telegram import Bot
+from apscheduler.schedulers.blocking import BlockingScheduler
+from alice_blue import AliceBlue, TransactionType, OrderType, ProductType
 
-# --- Environment Variables ---
+# ==== Load Environment Variables ====
 bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
 chat_id = os.getenv("TELEGRAM_CHAT_ID")
 bot = Bot(token=bot_token)
+
 alice_user = os.getenv("ALICEBLUE_USER_ID")
 alice_password = os.getenv("ALICEBLUE_PASSWORD")
+alice_app_code = os.getenv("ALICEBLUE_APP_CODE")  # ✅ Required
 alice_totp_secret = os.getenv("ALICEBLUE_TOTP_SECRET")
 api_secret = os.getenv("ALICEBLUE_API_SECRET")
 
-# --- AliceBlue Session ---
+# ==== AliceBlue Session ====
 def get_alice_session():
     totp = pyotp.TOTP(alice_totp_secret).now()
     print(f"✅ Generated TOTP: {totp}")
+    print("🔄 Starting bot... Getting AliceBlue session")
 
     try:
         session_id = AliceBlue.login_and_get_sessionID(
             username=alice_user,
             password=alice_password,
             twoFA=totp,
+            vendor_code=alice_app_code,  # ✅ Correct key
             api_secret=api_secret
         )
         print(f"🟢 Raw Response from API: {session_id}")
@@ -33,17 +37,17 @@ def get_alice_session():
         print(f"❌ Login failed: {e}")
         raise
 
-# --- Timezone Setup ---
+# ==== Timezone Setup ====
 IST = pytz.timezone("Asia/Kolkata")
 scheduler = BlockingScheduler(timezone=IST)
 
-# --- Market Status & Logic ---
+# ==== Market Logic ====
 last_alert_time = None
 next_option_type = "CE"
 
 def is_market_open():
     now = datetime.datetime.now(IST)
-    if now.weekday() >= 5:  # Saturday & Sunday
+    if now.weekday() >= 5:
         return False
     if now.hour < 9 or (now.hour == 9 and now.minute < 16):
         return False
@@ -55,28 +59,24 @@ def send_alert():
     global last_alert_time, next_option_type
 
     now = datetime.datetime.now(IST)
-
     if not is_market_open():
         return
 
     if last_alert_time and (now - last_alert_time).total_seconds() < 300:
         return
 
-    strike_price = 101.25  # Placeholder
+    strike_price = 101.25  # 🔁 Replace later with dynamic logic
     alert_message = (
         f"🟢 Paper Trade Alert:\n"
         f"NIFTY ATM {next_option_type} @ ₹{strike_price}\n"
         f"Time: {now.strftime('%Y-%m-%d %H:%M:%S')}"
     )
-
     bot.send_message(chat_id=chat_id, text=alert_message)
     print(alert_message)
 
-    # --- Real Trade Execution ---
     if os.getenv("REAL_MODE", "false").lower() == "true":
         alice = get_alice_session()
         option_symbol = "NIFTY"
-        strike = strike_price
         option_type = "CE" if next_option_type == "CE" else "PE"
         order_symbol = f"{option_symbol}{option_type}"
 
@@ -98,9 +98,9 @@ def send_alert():
         except Exception as e:
             print(f"❌ Order Failed: {e}")
 
-        last_alert_time = now
-        next_option_type = "PE" if next_option_type == "CE" else "CE"
+    last_alert_time = now
+    next_option_type = "PE" if next_option_type == "CE" else "CE"
 
-# --- Start Bot Scheduler ---
+# ==== Start Bot Scheduler ====
 scheduler.add_job(send_alert, "interval", minutes=1)
 scheduler.start()
