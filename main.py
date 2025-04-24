@@ -1,99 +1,57 @@
-import datetime
 import os
-from telegram import Bot
-from alice_blue import AliceBlue, TransactionType, OrderType, ProductType
-import pyotp
-from apscheduler.schedulers.blocking import BlockingScheduler
-import pytz
+from alice_blue import AliceBlue
+from dotenv import load_dotenv
 
-# === ENV SETUP ===
-bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-chat_id = os.getenv("TELEGRAM_CHAT_ID")
-bot = Bot(token=bot_token)
-alice_user = os.getenv("ALICEBLUE_USER_ID")
-alice_password = os.getenv("ALICEBLUE_PASSWORD")
-alice_totp_secret = os.getenv("ALICEBLUE_TOTP_SECRET")
-api_secret = os.getenv("ALICEBLUE_API_SECRET")
-alice_app_code = os.getenv("ALICEBLUE_APP_CODE")
+# Load environment variables from .env (useful locally and on Render)
+load_dotenv()
 
-# === AliceBlue Session ===
-def get_alice_session():
-    print("🔄 Starting bot... Getting AliceBlue session")
-    totp = pyotp.TOTP(alice_totp_secret).now()
-    print(f"✅ Generated TOTP: {totp}")
+# Alice Blue credentials from Render Environment or .env
+client_id = os.getenv("ALICE_CLIENT_ID")
+api_key = os.getenv("ALICE_API_KEY")
+api_secret = os.getenv("ALICE_API_SECRET")
+user_id = os.getenv("ALICE_USER_ID")
+two_fa = os.getenv("ALICE_TWO_FA")
+
+def login_and_get_sessionID(api_secret):
+    return AliceBlue.login_and_get_sessionID(
+        client_id=client_id,
+        api_key=api_key,
+        api_secret=api_secret,
+        twoFA=two_fa
+    )
+
+def place_real_trade(symbol):
     try:
-        session_id = AliceBlue.login_and_get_sessionID(api_secret=os.getenv("ALICE_API_SECRET"))
-    username=alice_user,
-    password=alice_password,
-    twoFA=totp,
-    app_id=api_secret
-)
+        session_id = login_and_get_sessionID(api_secret)
+        print(f"✅ Logged in with session: {session_id}")
 
-        print(f"🟢 Raw Response from API: {session_id}")
-        return AliceBlue(username=alice_user, session_id=session_id)
+        # Initialize AliceBlue API object
+        alice = AliceBlue(user_id=user_id,
+                          session_id=session_id,
+                          is_2fa=True)
+
+        # Example order (replace with your logic)
+        order = alice.place_order(
+            transaction_type=AliceBlue.TRANSACTION_TYPE_BUY,
+            instrument=alice.get_instrument_by_symbol('NSE', symbol),
+            quantity=1,  # update as needed
+            order_type=AliceBlue.ORDER_TYPE_MARKET,
+            product_type=AliceBlue.PRODUCT_INTRADAY,
+            price=0.0,
+            trigger_price=None,
+            stop_loss=None,
+            square_off=None,
+            trailing_sl=None,
+            is_amo=False
+        )
+
+        return f"Order placed: {order['norenordno']}"
+
     except Exception as e:
-        print(f"❌ Login failed: {e}")
-        raise
+        print(f"❌ Trade failed: {e}")
+        return str(e)
 
-# === TIMEZONE ===
-IST = pytz.timezone("Asia/Kolkata")
-scheduler = BlockingScheduler(timezone=IST)
-
-# === Market Timing Check ===
-def is_market_open():
-    now = datetime.datetime.now(IST)
-    if now.weekday() >= 5:
-        return False
-    if now.hour < 9 or (now.hour == 9 and now.minute < 16):
-        return False
-    if now.hour > 15 or (now.hour == 15 and now.minute >= 30):
-        return False
-    return True
-
-# === GLOBAL FLAGS ===
-last_alert_time = None
-next_option_type = "CE"
-
-# === Main Alert Function ===
-def send_alert():
-    global last_alert_time, next_option_type
-    now = datetime.datetime.now(IST)
-
-    if not is_market_open():
-        return
-
-    if last_alert_time and (now - last_alert_time).total_seconds() < 60:
-        return
-
-    strike_price = 101.25  # dummy strike
-    option_symbol = "NIFTY"
-    option_type = "CE" if next_option_type == "CE" else "PE"
-    order_symbol = f"{option_symbol}{option_type}"
-
-    if os.getenv("REAL_MODE", "false").lower() == "true":
-        alice = get_alice_session()
-        try:
-            order_id = alice.place_order(
-                transaction_type=TransactionType.Buy,
-                instrument=alice.get_instrument_by_symbol("NFO", order_symbol),
-                quantity=75,
-                order_type=OrderType.Market,
-                product_type=ProductType.Intraday,
-                price=0.0,
-                trigger_price=None,
-                stop_loss=None,
-                square_off=None,
-                trailing_sl=None,
-                is_amo=False
-            )
-            print(f"✅ Order Placed: {order_id}")
-        except Exception as e:
-            print(f"❌ Order Failed: {e}")
-    else:
-        print(f"⚠️ Skipping real trade. REAL_MODE not enabled.")
-
-    last_alert_time = now
-    next_option_type = "PE" if next_option_type == "CE" else "CE"
-
-scheduler.add_job(send_alert, "interval", minutes=1)
-scheduler.start()
+# Test login on startup
+if __name__ == "__main__":
+    result = place_real_trade("ITC")  # test stock
+    print(result)
