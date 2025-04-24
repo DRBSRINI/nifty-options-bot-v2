@@ -1,19 +1,26 @@
 import os
 from alice_blue import AliceBlue
 
-# Load credentials from Render environment
+# Load credentials from environment
+password = os.getenv("ALICE_PASSWORD")
+two_fa = os.getenv("ALICE_TWO_FA")
+app_id = os.getenv("ALICE_APP_ID")
 api_secret = os.getenv("ALICE_API_SECRET")
 user_id = os.getenv("ALICE_USER_ID")
-two_fa = os.getenv("ALICE_TWO_FA")
 
-# Step 1: Login using ONLY api_secret (as per Alice Blue v2 SDK)
-def login_and_get_sessionID(api_secret):
-    return AliceBlue.login_and_get_sessionID(api_secret)
+# Step 1: Login using all 4 required values
+def login_and_get_sessionID():
+    return AliceBlue.login_and_get_sessionID(
+        password,
+        two_fa,
+        app_id,
+        api_secret
+    )
 
-# Step 2: Place real trade (update quantity/symbol as needed)
+# Step 2: Place a real trade
 def place_real_trade(symbol):
     try:
-        session_id = login_and_get_sessionID(api_secret)
+        session_id = login_and_get_sessionID()
         print(f"✅ Logged in with session: {session_id}")
 
         alice = AliceBlue(user_id=user_id, session_id=session_id, is_2fa=True)
@@ -38,8 +45,8 @@ def place_real_trade(symbol):
         print(f"❌ Trade failed: {e}")
         return str(e)
 
-# Step 3: Test on startup
+# Test entry point
 if __name__ == "__main__":
     print("🟡 Running live trade test...")
-    result = place_real_trade("ITC")  # You can change this symbol
+    result = place_real_trade("ITC")
     print(result)
