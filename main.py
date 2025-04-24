@@ -8,7 +8,7 @@ app_id = os.getenv("ALICE_APP_ID")
 api_secret = os.getenv("ALICE_API_SECRET")
 user_id = os.getenv("ALICE_USER_ID")
 
-# ✅ Correct login with all 4 required parameters
+# ✅ Correct login format for Alice Blue SDK v2.0.4+
 def login_and_get_sessionID():
     return AliceBlue.login_and_get_sessionID(
         password,
@@ -17,7 +17,7 @@ def login_and_get_sessionID():
         api_secret
     )
 
-# ✅ Place real trade
+# ✅ Place a live market order (MIS intraday)
 def place_real_trade(symbol):
     try:
         session_id = login_and_get_sessionID()
@@ -45,8 +45,8 @@ def place_real_trade(symbol):
         print(f"❌ Trade failed: {e}")
         return str(e)
 
-# ✅ Test run
+# 🔧 Run this to test trade when script runs
 if __name__ == "__main__":
     print("🟡 Running live trade test...")
-    result = place_real_trade("ITC")
+    result = place_real_trade("ITC")  # You can change "ITC" to any NSE symbol
     print(result)
