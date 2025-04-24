@@ -8,7 +8,7 @@ app_id = os.getenv("ALICE_APP_ID")
 api_secret = os.getenv("ALICE_API_SECRET")
 user_id = os.getenv("ALICE_USER_ID")
 
-# Step 1: Login using all 4 required values
+# Step 1: Login using all required positional arguments
 def login_and_get_sessionID():
     return AliceBlue.login_and_get_sessionID(
         password,
@@ -25,6 +25,7 @@ def place_real_trade(symbol):
 
         alice = AliceBlue(user_id=user_id, session_id=session_id, is_2fa=True)
 
+        # Place a market order (MIS intraday)
         order = alice.place_order(
             transaction_type=AliceBlue.TRANSACTION_TYPE_BUY,
             instrument=alice.get_instrument_by_symbol('NSE', symbol),
@@ -45,8 +46,8 @@ def place_real_trade(symbol):
         print(f"❌ Trade failed: {e}")
         return str(e)
 
-# Test entry point
+# Entry point for testing live trade
 if __name__ == "__main__":
     print("🟡 Running live trade test...")
-    result = place_real_trade("ITC")
+    result = place_real_trade("ITC")  # Change "ITC" to any stock
     print(result)
