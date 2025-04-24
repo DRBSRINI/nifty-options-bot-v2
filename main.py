@@ -1,9 +1,6 @@
 import os
 from alice_blue import AliceBlue
-from dotenv import load_dotenv
 
-# Load environment variables from .env (useful locally and on Render)
-load_dotenv()
 
 # Alice Blue credentials from Render Environment or .env
 client_id = os.getenv("ALICE_CLIENT_ID")
