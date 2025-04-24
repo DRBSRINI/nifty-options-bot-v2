@@ -11,11 +11,12 @@ two_fa = os.getenv("ALICE_TWO_FA")
 
 def login_and_get_sessionID(api_secret):
     return AliceBlue.login_and_get_sessionID(
-        client_id=client_id,
-        api_key=api_key,
-        api_secret=api_secret,
-        twoFA=two_fa
+        client_id,
+        api_key,
+        api_secret,
+        two_fa
     )
+
 
 def place_real_trade(symbol):
     try:
