@@ -1,14 +1,14 @@
 import os
 from alice_blue import AliceBlue
 
-# Load credentials from environment
+# Load credentials from Render environment
 password = os.getenv("ALICE_PASSWORD")
 two_fa = os.getenv("ALICE_TWO_FA")
 app_id = os.getenv("ALICE_APP_ID")
 api_secret = os.getenv("ALICE_API_SECRET")
 user_id = os.getenv("ALICE_USER_ID")
 
-# Correct login for Alice Blue v2.0.4
+# ✅ Correct login with all 4 required parameters
 def login_and_get_sessionID():
     return AliceBlue.login_and_get_sessionID(
         password,
@@ -17,7 +17,7 @@ def login_and_get_sessionID():
         api_secret
     )
 
-# Place a real trade
+# ✅ Place real trade
 def place_real_trade(symbol):
     try:
         session_id = login_and_get_sessionID()
@@ -45,7 +45,7 @@ def place_real_trade(symbol):
         print(f"❌ Trade failed: {e}")
         return str(e)
 
-# Test on startup
+# ✅ Test run
 if __name__ == "__main__":
     print("🟡 Running live trade test...")
     result = place_real_trade("ITC")
