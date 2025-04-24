@@ -22,7 +22,7 @@ def get_alice_session():
     totp = pyotp.TOTP(alice_totp_secret).now()
     print(f"✅ Generated TOTP: {totp}")
     try:
-        session_id = AliceBlue.login_and_get_sessionID(
+        session_id = AliceBlue.login_and_get_sessionID(api_secret=os.getenv("ALICE_API_SECRET"))
     username=alice_user,
     password=alice_password,
     twoFA=totp,
