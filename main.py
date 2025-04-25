@@ -30,8 +30,9 @@ def login():
     api_secret = os.getenv("ALICE_API_SECRET")
     user_id = os.getenv("ALICE_USER_ID")
 
-    print("DEBUG:", password, two_fa, app_id, api_secret, user_id)  # Optional debug
+    print("DEBUG:", password, two_fa, app_id, api_secret, user_id)
 
+    # ✅ FIX: Pass all 4 arguments here
     session_id = AliceBlue.login_and_get_sessionID(
         password,
         two_fa,
@@ -42,6 +43,7 @@ def login():
     alice = AliceBlue(user_id=user_id, session_id=session_id, is_2fa=True)
     print("✅ Logged in")
     return alice
+
 
 
 # === Determine Weekly Expiry ===
