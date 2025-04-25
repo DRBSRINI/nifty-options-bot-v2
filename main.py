@@ -24,10 +24,25 @@ trade_count = {"CE": 0, "PE": 0}
 
 # === Login ===
 def login():
-    session_id = AliceBlue.login_and_get_sessionID(password, two_fa, app_id, api_secret)
+    password = os.getenv("ALICE_PASSWORD")
+    two_fa = os.getenv("ALICE_TWO_FA")
+    app_id = os.getenv("ALICE_APP_ID")
+    api_secret = os.getenv("ALICE_API_SECRET")
+    user_id = os.getenv("ALICE_USER_ID")
+
+    print("DEBUG:", password, two_fa, app_id, api_secret, user_id)  # Optional debug
+
+    session_id = AliceBlue.login_and_get_sessionID(
+        password,
+        two_fa,
+        app_id,
+        api_secret
+    )
+
     alice = AliceBlue(user_id=user_id, session_id=session_id, is_2fa=True)
     print("✅ Logged in")
     return alice
+
 
 # === Determine Weekly Expiry ===
 def get_weekly_expiry():
