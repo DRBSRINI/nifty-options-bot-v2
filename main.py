@@ -43,13 +43,6 @@ def login():
     print("✅ Logged in")
     return alice
 
-
-    alice = AliceBlue(user_id=user_id, session_id=session_id, is_2fa=True)
-    print("✅ Logged in")
-    return alice
-
-
-
 # === Determine Weekly Expiry ===
 def get_weekly_expiry():
     today = datetime.date.today()
