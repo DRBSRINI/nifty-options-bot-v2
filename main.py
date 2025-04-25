@@ -12,6 +12,7 @@ print("DEBUG:", password, two_fa, app_id, api_secret, user_id)
 
 def login():
     session_id = AliceBlue.login_and_get_sessionID(
+        username=user_id,
         password=password,
         twoFA=two_fa,
         app_id=app_id,
@@ -20,6 +21,7 @@ def login():
     alice = AliceBlue(user_id=user_id, session_id=session_id, is_2fa=True)
     print("✅ Logged in")
     return alice
+
 
 def run_bot():
     alice = login()
