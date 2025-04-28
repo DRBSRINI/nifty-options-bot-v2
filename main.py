@@ -1,16 +1,19 @@
-# 📂 Full main.py with Signal Printing (working, clean)
-
 import os
 import time
-import datetime
+import pyotp
 from alice_blue import AliceBlue
 
+# Login function
 def login():
     user_id = os.getenv("ALICE_USER_ID")
     password = os.getenv("ALICE_PASSWORD")
-    two_fa = os.getenv("ALICE_TWO_FA")
+    two_fa_secret = os.getenv("ALICE_TWO_FA")
     app_id = os.getenv("ALICE_APP_ID")
     api_secret = os.getenv("ALICE_API_SECRET")
+
+    # Generate dynamic TOTP code from secret
+    totp = pyotp.TOTP(two_fa_secret)
+    two_fa = totp.now()
 
     print(f"DEBUG: Logging in with user_id={user_id}, app_id={app_id}")
 
@@ -23,49 +26,28 @@ def login():
     )
 
     alice = AliceBlue(user_id=user_id, session_id=session_id)
-    print("\u2705 Successfully logged into Alice Blue")
+    print("✅ Successfully logged into Alice Blue")
     return alice
 
+# Bot main logic
 def run_bot():
     alice = login()
 
-    print("Fetching instruments...")
-    instruments = alice.get_instrument_by_symbol("NFO", "NIFTY")
-
-    # Assuming fetching of ATM CE and ATM PE dynamically will be added later
-    ce_token = 'PLACEHOLDER_CE_TOKEN'
-    pe_token = 'PLACEHOLDER_PE_TOKEN'
-
     while True:
+        print("🔄 Fetching latest NIFTY Option Prices...")
+
         try:
-            # Replace with proper token fetching if needed
-            hist_1m = alice.get_historical(instrument_token=ce_token, interval="1Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
-            hist_5m = alice.get_historical(instrument_token=ce_token, interval="5Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
-            hist_15m = alice.get_historical(instrument_token=ce_token, interval="15Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
+            nifty_spot = alice.get_instrument_by_symbol('NSE', 'NIFTY')
+            ltp = alice.get_ltp(nifty_spot)
 
-            hist_1m_pe = alice.get_historical(instrument_token=pe_token, interval="1Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
-            hist_5m_pe = alice.get_historical(instrument_token=pe_token, interval="5Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
-            hist_15m_pe = alice.get_historical(instrument_token=pe_token, interval="15Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
+            print(f"NIFTY Spot LTP: {ltp['ltp']}")
 
-            # --- Signal detection ---
-
-            # CE Signal
-            if (hist_1m[-1]['close'] > hist_1m[-2]['close']) and (hist_5m[-1]['close'] > hist_5m[-2]['close']) and (hist_15m[-1]['close'] > hist_15m[-2]['close']):
-                now = datetime.datetime.now().strftime("%I:%M %p")
-                last_price = hist_1m[-1]['close']
-                print(f"\u2705 Signal Detected: BUY CE\nTime: {now}\nLast Price: \u20b9{last_price}")
-
-            # PE Signal
-            if (hist_1m_pe[-1]['close'] < hist_1m_pe[-2]['close']) and (hist_5m_pe[-1]['close'] < hist_5m_pe[-2]['close']) and (hist_15m_pe[-1]['close'] < hist_15m_pe[-2]['close']):
-                now = datetime.datetime.now().strftime("%I:%M %p")
-                last_price = hist_1m_pe[-1]['close']
-                print(f"\u2705 Signal Detected: BUY PE\nTime: {now}\nLast Price: \u20b9{last_price}")
-
-            time.sleep(60)
+            # Here you can add logic for CE/PE signals
 
         except Exception as e:
-            print(f"Error: {str(e)}")
-            time.sleep(60)
+            print(f"Error: {e}")
+
+        time.sleep(60)  # Check every 1 min
 
 if __name__ == "__main__":
     run_bot()
