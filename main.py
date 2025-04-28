@@ -3,26 +3,27 @@ import time
 import pyotp
 from alice_blue import AliceBlue
 
+import os
+import pyotp
+from alice_blue import AliceBlue
+
 def login():
     user_id = os.getenv("ALICE_USER_ID")
     password = os.getenv("ALICE_PASSWORD")
-    two_fa_secret = os.getenv("ALICE_TWO_FA")
     app_id = os.getenv("ALICE_APP_ID")
     api_secret = os.getenv("ALICE_API_SECRET")
+    two_fa_secret = os.getenv("ALICE_TWO_FA")
 
-    if not all([user_id, password, two_fa_secret, app_id, api_secret]):
-        raise Exception("❌ Missing environment variable. Check Render dashboard Environment settings.")
-
-    # Generate dynamic TOTP from secret
+    # generate OTP from TOTP secret
     totp = pyotp.TOTP(two_fa_secret)
-    two_fa = totp.now()
+    two_fa_code = totp.now()
 
-    print(f"DEBUG: Logging in with user_id={user_id}")
+    print(f"DEBUG: Logging in with user_id={user_id}, app_id={app_id}")
 
     session_id = AliceBlue.login_and_get_sessionID(
         username=user_id,
         password=password,
-        twoFA=two_fa,
+        twoFA=two_fa_code,  # send generated OTP
         app_id=app_id,
         api_secret=api_secret
     )
@@ -30,6 +31,7 @@ def login():
     alice = AliceBlue(user_id=user_id, session_id=session_id)
     print("✅ Successfully logged into Alice Blue")
     return alice
+
 
 def run_bot():
     alice = login()
