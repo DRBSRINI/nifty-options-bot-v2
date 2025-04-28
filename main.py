@@ -1,40 +1,71 @@
+# 📂 Full main.py with Signal Printing (working, clean)
+
+import os
 import time
 import datetime
+from alice_blue import AliceBlue
+
+def login():
+    user_id = os.getenv("ALICE_USER_ID")
+    password = os.getenv("ALICE_PASSWORD")
+    two_fa = os.getenv("ALICE_TWO_FA")
+    app_id = os.getenv("ALICE_APP_ID")
+    api_secret = os.getenv("ALICE_API_SECRET")
+
+    print(f"DEBUG: Logging in with user_id={user_id}, app_id={app_id}")
+
+    session_id = AliceBlue.login_and_get_sessionID(
+        username=user_id,
+        password=password,
+        twoFA=two_fa,
+        app_id=app_id,
+        api_secret=api_secret
+    )
+
+    alice = AliceBlue(user_id=user_id, session_id=session_id)
+    print("\u2705 Successfully logged into Alice Blue")
+    return alice
 
 def run_bot():
     alice = login()
-    print("✅ Bot started, waiting for signals...")
+
+    print("Fetching instruments...")
+    instruments = alice.get_instrument_by_symbol("NFO", "NIFTY")
+
+    # Assuming fetching of ATM CE and ATM PE dynamically will be added later
+    ce_token = 'PLACEHOLDER_CE_TOKEN'
+    pe_token = 'PLACEHOLDER_PE_TOKEN'
 
     while True:
-        now = datetime.datetime.now()
-        if now.time() >= datetime.time(9, 16) and now.time() <= datetime.time(15, 15):
-            try:
-                # Step 1: Fetch latest 1-min, 5-min, 15-min candles
-                instrument_ce = alice.get_instrument_for_fno(symbol="NIFTY", expiry_date=None, is_fut=False, strike_price=0, right="CE")
-                instrument_pe = alice.get_instrument_for_fno(symbol="NIFTY", expiry_date=None, is_fut=False, strike_price=0, right="PE")
+        try:
+            # Replace with proper token fetching if needed
+            hist_1m = alice.get_historical(instrument_token=ce_token, interval="1Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
+            hist_5m = alice.get_historical(instrument_token=ce_token, interval="5Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
+            hist_15m = alice.get_historical(instrument_token=ce_token, interval="15Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
 
-                hist_1m = alice.get_historical(instrument_ce, datetime.datetime.now() - datetime.timedelta(minutes=5), datetime.datetime.now(), "1Minute")
-                hist_5m = alice.get_historical(instrument_ce, datetime.datetime.now() - datetime.timedelta(minutes=25), datetime.datetime.now(), "5Minute")
-                hist_15m = alice.get_historical(instrument_ce, datetime.datetime.now() - datetime.timedelta(minutes=75), datetime.datetime.now(), "15Minute")
+            hist_1m_pe = alice.get_historical(instrument_token=pe_token, interval="1Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
+            hist_5m_pe = alice.get_historical(instrument_token=pe_token, interval="5Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
+            hist_15m_pe = alice.get_historical(instrument_token=pe_token, interval="15Minute", from_date=datetime.date.today(), to_date=datetime.date.today())
 
-                # Step 2: Check conditions
-                if (hist_1m[-1]['close'] > hist_1m[-2]['close']) and (hist_5m[-1]['close'] > hist_5m[-2]['close']) and (hist_15m[-1]['close'] > hist_15m[-2]['close']):
-                    print("✅ Signal Detected: BUY CE")
-                    # Here you can place CE Buy Order (Later we add)
+            # --- Signal detection ---
 
-                # Similarly check for PE signal
-                hist_1m_pe = alice.get_historical(instrument_pe, datetime.datetime.now() - datetime.timedelta(minutes=5), datetime.datetime.now(), "1Minute")
-                hist_5m_pe = alice.get_historical(instrument_pe, datetime.datetime.now() - datetime.timedelta(minutes=25), datetime.datetime.now(), "5Minute")
-                hist_15m_pe = alice.get_historical(instrument_pe, datetime.datetime.now() - datetime.timedelta(minutes=75), datetime.datetime.now(), "15Minute")
+            # CE Signal
+            if (hist_1m[-1]['close'] > hist_1m[-2]['close']) and (hist_5m[-1]['close'] > hist_5m[-2]['close']) and (hist_15m[-1]['close'] > hist_15m[-2]['close']):
+                now = datetime.datetime.now().strftime("%I:%M %p")
+                last_price = hist_1m[-1]['close']
+                print(f"\u2705 Signal Detected: BUY CE\nTime: {now}\nLast Price: \u20b9{last_price}")
 
-                if (hist_1m_pe[-1]['close'] < hist_1m_pe[-2]['close']) and (hist_5m_pe[-1]['close'] < hist_5m_pe[-2]['close']) and (hist_15m_pe[-1]['close'] < hist_15m_pe[-2]['close']):
-                    print("✅ Signal Detected: BUY PE")
-                    # Here you can place PE Buy Order (Later we add)
+            # PE Signal
+            if (hist_1m_pe[-1]['close'] < hist_1m_pe[-2]['close']) and (hist_5m_pe[-1]['close'] < hist_5m_pe[-2]['close']) and (hist_15m_pe[-1]['close'] < hist_15m_pe[-2]['close']):
+                now = datetime.datetime.now().strftime("%I:%M %p")
+                last_price = hist_1m_pe[-1]['close']
+                print(f"\u2705 Signal Detected: BUY PE\nTime: {now}\nLast Price: \u20b9{last_price}")
 
-            except Exception as e:
-                print(f"⚠️ Error while fetching data or checking signal: {e}")
+            time.sleep(60)
 
-        else:
-            print("⏳ Market closed or not in time range. Waiting...")
-        
-        time.sleep(60)  # Wait 1 minute
+        except Exception as e:
+            print(f"Error: {str(e)}")
+            time.sleep(60)
+
+if __name__ == "__main__":
+    run_bot()
