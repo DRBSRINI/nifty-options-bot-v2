@@ -1,19 +1,23 @@
+import pyotp
 import os
 from alice_blue import AliceBlue
 
 def login():
     user_id = os.getenv("ALICE_USER_ID")
     password = os.getenv("ALICE_PASSWORD")
-    two_fa = os.getenv("ALICE_TWO_FA")
     app_id = os.getenv("ALICE_APP_ID")
     api_secret = os.getenv("ALICE_API_SECRET")
+    totp_secret = os.getenv("ALICE_TOTP_SECRET")  # New variable
+
+    # Generate TOTP dynamically
+    two_fa = pyotp.TOTP(totp_secret).now()
 
     print(f"DEBUG: Logging in with user_id={user_id}, app_id={app_id}")
 
     session_id = AliceBlue.login_and_get_sessionID(
         username=user_id,
         password=password,
-        twoFA=two_fa,
+        twoFA=two_fa,      # now dynamic TOTP
         app_id=app_id,
         api_secret=api_secret
     )
