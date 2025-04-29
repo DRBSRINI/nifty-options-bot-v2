@@ -31,39 +31,51 @@ def alice_login():
     logger.info(f"🔑 Generated TOTP: {otp}")
 
     try:
-        # Step 1: Encrypt password
-        url_enc = f"https://ant.aliceblueonline.com/rest/AliceBlueAPIService/api/customer/getAPIEncpkey"
-        r_enc = requests.get(url_enc)
-        enc_key = r_enc.json()["encKey"]
-        logger.info("✅ Encryption key fetched")
+        url_login = "https://ant.aliceblueonline.com/rest/AliceBlueAPIService/api/customer/login"
 
-        # Step 2: Send login request
-        url_login = f"https://ant.aliceblueonline.com/rest/AliceBlueAPIService/api/customer/login"
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "userId": USER_ID,
-            "userData": {
-                "app_id": APP_ID,
-                "api_secret": API_SECRET,
-                "password": PASSWORD,
-                "totp": otp
-            }
+        headers = {
+            "Content-Type": "application/json"
         }
 
-        res = requests.post(url_login, headers=headers, json=payload)
-        if res.status_code == 200:
-            data = res.json()
+        payload = {
+            "userId": USER_ID,
+            "password": PASSWORD,
+            "twoFA": otp,
+            "vendorCode": USER_ID,
+            "apiKey": APP_ID,
+            "clientID": USER_ID,
+            "source": "API",
+        }
+
+        logger.info("📤 Sending login request to Alice Blue...")
+        response = requests.post(url_login, headers=headers, json=payload)
+        response_text = response.text.strip()
+
+        if response.status_code == 200:
+            try:
+                data = response.json()
+            except Exception as json_err:
+                logger.error(f"❌ JSON decode error: {json_err}")
+                logger.error(f"Raw response: {response_text}")
+                return None
+
             if data.get("stat") == "Ok":
-                session_id = data.get("susertoken")
-                logger.info("✅ Login successful, session ID obtained.")
+                session_id = data.get("susertoken") or data.get("sessionID")
+                logger.info("✅ Login successful.")
                 return session_id
             else:
-                logger.error(f"Login failed response: {data}")
+                logger.error(f"❌ Login rejected: {data}")
         else:
-            logger.error(f"Login failed, status {res.status_code}")
+            logger.error(f"❌ Login failed. Status: {response.status_code}")
+            logger.error(f"Raw response: {response_text}")
+
     except Exception as e:
-        logger.error(f"Login failed with error: {e}")
+        logger.error(f"❌ Login failed with error: {e}")
+
     return None
+
+
+        
 
 def run_trading_logic():
     now = datetime.now().strftime("%H:%M:%S")
