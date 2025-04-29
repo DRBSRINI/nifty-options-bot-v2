@@ -1,88 +1,67 @@
 import os
+import pyotp
+import requests
+import json
 import time
-import pytz
-import logging
-from datetime import datetime
-from apscheduler.schedulers.background import BackgroundScheduler
-from alice_blue import AliceBlue
-import pyotp
 
-# Logging setup
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+def login_aliceblue():
+    print("🚀 Starting Alice Blue TOTP Login...")
 
-# Environment Variables
-ALICE_USER_ID = os.getenv("ALICE_USER_ID")
-ALICE_PASSWORD = os.getenv("ALICE_PASSWORD")
-ALICE_TWO_FA = os.getenv("ALICE_TWO_FA")
-ALICE_API_SECRET = os.getenv("ALICE_API_SECRET")
-ALICE_APP_ID = os.getenv("ALICE_APP_ID")
-REAL_MODE = os.getenv("REAL_MODE", "false").lower() == "true"
+    # Load credentials from environment
+    user_id = os.getenv("ALICE_USER_ID")
+    password = os.getenv("ALICE_PASSWORD")
+    two_fa_secret = os.getenv("ALICE_TWO_FA")
+    app_id = os.getenv("ALICE_APP_ID")
+    api_secret = os.getenv("ALICE_API_SECRET")
 
-# TOTP Generation
-def generate_otp(secret):
-    totp = pyotp.TOTP(secret)
-    return totp.now()
+    # Generate TOTP
+    totp = pyotp.TOTP(two_fa_secret).now()
+    print(f"✅ Generated TOTP: {totp}")
 
-# Login function
-def login():
-    from alice_blue import AliceBlue
-import pyotp
-import os
+    login_url = "https://ant.aliceblueonline.com/rest/AliceBlueAPIService/api/customer/login"
 
-username = os.getenv("ALICE_USER_ID")
-password = os.getenv("ALICE_PASSWORD")
-app_id = os.getenv("ALICE_APP_ID")
-api_secret = os.getenv("ALICE_API_SECRET")
-totp_key = os.getenv("ALICE_TWO_FA")
+    headers = {
+        "Content-Type": "application/json"
+    }
 
-# Generate TOTP
-totp = pyotp.TOTP(totp_key).now()
+    payload = {
+        "userId": user_id,
+        "userData": {
+            "password": password,
+            "twoFA": totp,
+            "vendorCode": user_id,
+            "apiKey": app_id,
+            "source": "API",
+            "userId": user_id
+        }
+    }
 
-# Login flow using new method
-session = AliceBlue.login_and_get_sessionID(
-    username=username,
-    password=password,
-    twoFA=totp,
-    app_id=app_id,
-    api_secret=api_secret
-)
+    try:
+        response = requests.post(login_url, headers=headers, data=json.dumps(payload))
+        response.raise_for_status()
+        data = response.json()
 
-print("✅ Login session:", session)
+        if data.get("status") == "Success":
+            print("✅ Login successful!")
+            return data["sessionID"]
+        else:
+            print("❌ Login failed:", data)
+            return None
 
-# Trading Logic Placeholder
-def run_trading_logic():
-    now = datetime.now(pytz.timezone("Asia/Kolkata"))
-    logger.info(f"Running trade logic at {now.strftime('%H:%M:%S')}...")
-    # Place your real trading logic here
+    except Exception as e:
+        print("🔥 Exception during login:", e)
+        return None
 
-# Health Check
-def health_check():
-    logger.info("✅ Bot is running smoothly...")
-
-# Run Bot
 
 def run_bot():
-    try:
-        alice = login()
-    except Exception as e:
-        logger.error(f"Login failed: {e}")
-        logger.error("❌ Bot Stopped.")
+    session_id = login_aliceblue()
+    if not session_id:
+        print("❌ Login failed, bot stopping.")
         return
 
-    # Schedule tasks
-    scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
-    scheduler.add_job(run_trading_logic, "interval", minutes=5, id="run_trading_logic")
-    scheduler.add_job(health_check, "interval", minutes=10, id="health_check")
-    scheduler.start()
-    logger.info("🤖 Bot Started 🚀")
+    print("📡 Bot logic would start here using session ID:", session_id)
+    # TODO: Add trading logic here using session_id
 
-    try:
-        while True:
-            time.sleep(60)
-    except KeyboardInterrupt:
-        logger.info("Interrupted. Shutting down bot...")
-        scheduler.shutdown()
 
 if __name__ == "__main__":
     run_bot()
