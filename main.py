@@ -26,24 +26,29 @@ def generate_otp(secret):
 
 # Login function
 def login():
-    logger.info("Starting Alice Blue TOTP Login...")
-    otp = generate_otp(ALICE_TWO_FA)
-    logger.info(f"Generated TOTP: {otp}")
+    from alice_blue import AliceBlue
+import pyotp
+import os
 
-    session_id = AliceBlue.login_and_get_sessionID(
-        username=ALICE_USER_ID,
-        password=ALICE_PASSWORD,
-        twoFA=otp,
-        api_secret=ALICE_API_SECRET,
-        app_id=ALICE_APP_ID
-    )
+username = os.getenv("ALICE_USER_ID")
+password = os.getenv("ALICE_PASSWORD")
+app_id = os.getenv("ALICE_APP_ID")
+api_secret = os.getenv("ALICE_API_SECRET")
+totp_key = os.getenv("ALICE_TWO_FA")
 
-    alice = AliceBlue(
-        username=ALICE_USER_ID,
-        session_id=session_id
-    )
-    logger.info("✅ Login successful")
-    return alice
+# Generate TOTP
+totp = pyotp.TOTP(totp_key).now()
+
+# Login flow using new method
+session = AliceBlue.login_and_get_sessionID(
+    username=username,
+    password=password,
+    twoFA=totp,
+    app_id=app_id,
+    api_secret=api_secret
+)
+
+print("✅ Login session:", session)
 
 # Trading Logic Placeholder
 def run_trading_logic():
