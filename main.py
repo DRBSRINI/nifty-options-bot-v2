@@ -1,103 +1,71 @@
-# main.py
-
 import os
-import json
 import time
 import logging
 import pyotp
-import requests
-from datetime import datetime
+import pandas as pd
+from alice_blue import AliceBlue
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-logger = logging.getLogger(__name__)
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
-# ENV Variables
-USER_ID = os.getenv("ALICE_USER_ID")
-PASSWORD = os.getenv("ALICE_PASSWORD")
-APP_ID = os.getenv("ALICE_APP_ID")
-API_SECRET = os.getenv("ALICE_API_SECRET")
-TOTP_SECRET = os.getenv("ALICE_TWO_FA")
+# Load environment variables
+ALICE_USER_ID = os.getenv("ALICE_USER_ID")
+ALICE_PASSWORD = os.getenv("ALICE_PASSWORD")
+ALICE_TWO_FA_KEY = os.getenv("ALICE_TWO_FA")
+ALICE_API_SECRET = os.getenv("ALICE_API_SECRET")
+ALICE_APP_ID = os.getenv("ALICE_APP_ID")
 
+# TOTP Generator
 def generate_totp():
-    totp = pyotp.TOTP(TOTP_SECRET)
-    return totp.now()
+    return pyotp.TOTP(ALICE_TWO_FA_KEY).now()
 
-def alice_login():
-    logger.info("🔐 Starting Alice Blue TOTP Login...")
+# Login Function
+def login():
+    logging.info("Starting Alice Blue TOTP Login...")
+    totp = generate_totp()
+    logging.info(f"Generated TOTP: {totp}")
+    access_token = AliceBlue.login_and_get_access_token(
+        username=ALICE_USER_ID,
+        password=ALICE_PASSWORD,
+        twoFA=totp,
+        api_secret=ALICE_API_SECRET,
+        app_id=ALICE_APP_ID
+    )
+    return AliceBlue(username=ALICE_USER_ID,
+                     password=ALICE_PASSWORD,
+                     access_token=access_token,
+                     master_contracts_to_download=['NSE', 'NFO'])
 
-    otp = generate_totp()
-    logger.info(f"🔑 Generated TOTP: {otp}")
+# Trade Logic (placeholder)
+def run_trading_logic():
+    logging.info("Running trading logic...")
+    # Example check: just show time
+    logging.info("Current Time: %s", time.strftime("%H:%M:%S"))
 
+# Health Check
+def health_check():
+    logging.info("Bot is running... ✅")
+
+# Main Bot Runner
+def run_bot():
     try:
-        url_login = "https://ant.aliceblueonline.com/rest/AliceBlueAPIService/api/customer/login"
+        alice = login()
+        logging.info("Login successful ✅")
 
-        headers = {
-            "Content-Type": "application/json"
-        }
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(run_trading_logic, 'interval', minutes=1, id='run_trading_logic')
+        scheduler.add_job(health_check, 'interval', minutes=5, id='health_check')
+        scheduler.start()
 
-        payload = {
-            "userId": USER_ID,
-            "password": PASSWORD,
-            "twoFA": otp,
-            "vendorCode": USER_ID,
-            "apiKey": APP_ID,
-            "clientID": USER_ID,
-            "source": "API",
-        }
+        logging.info("Bot Started 🚀")
 
-        logger.info("📤 Sending login request to Alice Blue...")
-        response = requests.post(url_login, headers=headers, json=payload)
-        response_text = response.text.strip()
-
-        if response.status_code == 200:
-            try:
-                data = response.json()
-            except Exception as json_err:
-                logger.error(f"❌ JSON decode error: {json_err}")
-                logger.error(f"Raw response: {response_text}")
-                return None
-
-            if data.get("stat") == "Ok":
-                session_id = data.get("susertoken") or data.get("sessionID")
-                logger.info("✅ Login successful.")
-                return session_id
-            else:
-                logger.error(f"❌ Login rejected: {data}")
-        else:
-            logger.error(f"❌ Login failed. Status: {response.status_code}")
-            logger.error(f"Raw response: {response_text}")
+        while True:
+            time.sleep(60)
 
     except Exception as e:
-        logger.error(f"❌ Login failed with error: {e}")
-
-    return None
-
-
-        
-
-def run_trading_logic():
-    now = datetime.now().strftime("%H:%M:%S")
-    logger.info(f"⚙️ Trading logic running at {now}")
-
-def run_bot():
-    session_token = alice_login()
-    if not session_token:
-        logger.error("❌ Bot stopped due to failed login.")
-        return
-
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(run_trading_logic, 'interval', minutes=1)
-    scheduler.start()
-
-    logger.info("🤖 Bot Started and running!")
-    try:
-        while True:
-            time.sleep(2)
-    except KeyboardInterrupt:
-        scheduler.shutdown()
-        logger.info("🛑 Bot Stopped")
+        logging.error(f"Login failed: {str(e)}")
+        logging.error("Bot Stopped.")
 
 if __name__ == "__main__":
     run_bot()
