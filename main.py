@@ -1,119 +1,84 @@
-# Final corrected main.py for Nifty Options Bot (Render Ready)
-
 import os
-import json
 import time
-import pytz
 import logging
 import pyotp
-import datetime
-import holidays
 import pandas as pd
+from datetime import datetime
 from alice_blue import AliceBlue
 from apscheduler.schedulers.background import BackgroundScheduler
-from telegram import Bot
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Environment Variables
-ALICE_USER_ID = os.getenv('ALICE_USER_ID')
-ALICE_PASSWORD = os.getenv('ALICE_PASSWORD')
-ALICE_TWO_FA = os.getenv('ALICE_TWO_FA')  # TOTP Secret Key
-ALICE_APP_ID = os.getenv('ALICE_APP_ID')
-ALICE_API_SECRET = os.getenv('ALICE_API_SECRET')
-REAL_MODE = os.getenv('REAL_MODE', 'FALSE').upper() == 'TRUE'
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+# Load Environment Variables
+APP_ID = os.getenv("ALICE_APP_ID")
+API_SECRET = os.getenv("ALICE_API_SECRET")
+USER_ID = os.getenv("ALICE_USER_ID")
+PASSWORD = os.getenv("ALICE_PASSWORD")
+TWO_FA_SECRET = os.getenv("ALICE_TWO_FA")
+REAL_MODE = os.getenv("REAL_MODE", "false").lower() == "true"
 
-# Setup Telegram Bot
-telegram_bot = Bot(token=TELEGRAM_BOT_TOKEN)
+# Telegram settings (Optional)
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Initialize Scheduler
-scheduler = BackgroundScheduler(timezone=pytz.timezone('Asia/Kolkata'))
-
-# AliceBlue session object
-alice = None
-
-# India Holidays for NSE
-indian_holidays = holidays.India()
-
-# Generate TOTP Code from Secret
-def generate_totp_code(secret_key):
+# Generate TOTP
+def generate_totp(secret_key):
     totp = pyotp.TOTP(secret_key)
     return totp.now()
 
-# Login Function
+# Login to Alice Blue
+session_id = None
 def login():
-    global alice
+    global session_id
     try:
-        totp_code = generate_totp_code(ALICE_TWO_FA)
-        logger.info(f"Generated TOTP: {totp_code}")
-        alice = AliceBlue.login_and_get_sessionID(
-            username=ALICE_USER_ID,
-            password=ALICE_PASSWORD,
+        totp_code = generate_totp(TWO_FA_SECRET)
+        logger.info(f"Generated OTP: {totp_code}")
+
+        session = AliceBlue.login_and_get_sessionID(
+            username=USER_ID,
+            password=PASSWORD,
             twoFA=totp_code,
-            app_id=ALICE_APP_ID,
-            api_secret=ALICE_API_SECRET
+            app_id=APP_ID,
+            api_secret=API_SECRET
         )
-        logger.info("AliceBlue login successful!")
+        session_id = session
+        logger.info("✅ Successfully logged in to Alice Blue!")
+        return AliceBlue(username=USER_ID, session_id=session, app_id=APP_ID)
     except Exception as e:
-        logger.error(f"Login Failed: {e}")
-        send_telegram_alert(f"Login Failed: {e}")
+        logger.error(f"❌ Login Failed: {e}")
+        return None
 
-# Telegram Alert
-def send_telegram_alert(message):
-    try:
-        telegram_bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-    except Exception as e:
-        logger.error(f"Telegram Send Error: {e}")
-
-# Your Trading Logic Placeholder
-# Example simple function, modify as per your strategy
-
+# Trading Logic (Dummy Placeholder)
 def run_trading_logic():
-    if alice is None:
-        logger.error("AliceBlue session not active.")
-        return
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info(f"[RUNNING] Trading logic at {now}")
 
-    today = datetime.date.today()
-    if today in indian_holidays:
-        logger.info("Market Holiday today. No trades.")
-        return
-
-    now = datetime.datetime.now(pytz.timezone('Asia/Kolkata'))
-    if now.hour < 9 or now.hour > 15:
-        logger.info("Outside Trading Hours.")
-        return
-
-    logger.info("Running Trading Logic...")
-    send_telegram_alert("Bot is Running Trading Logic ✅")
-
-    # ----> Place your trading code here! <----
-    # Example: fetch Nifty, BankNifty options, check conditions, place order
-
-# Health Check Function
-
+# Health Check
 def health_check():
-    now = datetime.datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%d-%m-%Y %H:%M:%S')
-    logger.info(f"Health Check at {now}")
-    send_telegram_alert(f"✅ Bot Active: {now}")
+    logger.info("✅ Bot is running fine (Health Check)")
 
-# Main Bot Runner
-
+# Main Function
 def run_bot():
-    login()
+    alice = login()
+    if alice is None:
+        logger.error("Login failed. Bot Stopped.")
+        return
 
+    scheduler = BackgroundScheduler()
     scheduler.add_job(run_trading_logic, 'interval', minutes=1)
     scheduler.add_job(health_check, 'interval', minutes=30)
     scheduler.start()
 
-    logger.info("Bot Started 🚀")
-    send_telegram_alert("🚀 Nifty Options Bot Started!")
+    logger.info("🚀 Bot Started")
 
-    while True:
-        time.sleep(60)
+    try:
+        while True:
+            time.sleep(60)
+    except (KeyboardInterrupt, SystemExit):
+        scheduler.shutdown()
+        logger.info("🛑 Bot stopped manually.")
 
 if __name__ == "__main__":
     run_bot()
