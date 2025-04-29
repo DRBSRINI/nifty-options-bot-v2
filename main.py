@@ -16,13 +16,13 @@ def login_aliceblue():
     print("✅ Generated TOTP:", totp)
 
     try:
-        session_id = AliceBlue.login_and_get_sessionID(
-            user_id=user_id,
-            password=password,
-            twoFA=totp,
-            app_id=app_id,
-            api_secret=api_secret
-        )
+       session_id = AliceBlue.login_and_get_sessionID(
+    username=user_id,             # <-- fixed
+    password=password,
+    twoFA=totp,
+    api_secret=api_secret,
+    app_id=app_id
+)
         print("✅ Login successful!")
         return session_id
 
