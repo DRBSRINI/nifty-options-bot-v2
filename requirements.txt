@@ -4,3 +4,4 @@ alice-blue==2.0.4
 pyotp
 apscheduler
 pytz
+pandas
