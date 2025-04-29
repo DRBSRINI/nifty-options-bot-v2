@@ -24,7 +24,7 @@ def login():
     session_id = AliceBlue.login_and_get_sessionID(
         username=user_id,
         password=password,
-        two_fa = "101314"
+        two_fa = "448711",
         app_id=app_id,
         api_secret=api_secret
     )
