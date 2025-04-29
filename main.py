@@ -1,126 +1,109 @@
 import os
-import datetime as dt
-import pandas as pd
+import time
+import json
 import pytz
+import logging
+import requests
+import pandas as pd
+from datetime import datetime
 from alice_blue import AliceBlue
 from apscheduler.schedulers.background import BackgroundScheduler
-from pytz import timezone
+from pyotp import TOTP
 from telegram import Bot
-import holidays
-import pyotp
 
-# --- CONFIGURATION ---
-capital = 70000
-entry_start_time = dt.time(9, 26)
-entry_end_time = dt.time(15, 0)
-max_trades_per_day = 5
-sl_points = 50
-tp_points = 25
-tsl_points = 5
-lot_size = 75
-ist = timezone('Asia/Kolkata')
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+IST = pytz.timezone('Asia/Kolkata')
 
-# --- TELEGRAM SETUP ---
-telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
-bot = Bot(token=telegram_bot_token)
+# Environment Variables
+USER_ID = os.getenv("USER_ID")
+API_SECRET = os.getenv("API_SECRET")
+TOTP_SECRET = os.getenv("ALICE_TWO_FA")  # Ensure this matches your environment variable
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# Initialize Telegram Bot
+tg = Bot(token=BOT_TOKEN)
 
 def send_alert(msg):
     try:
-        bot.send_message(chat_id=telegram_chat_id, text=msg)
-    except:
-        print("Failed to send Telegram message")
-
-# --- LOGIN ---
-print("\U0001F680 Logging in to Alice Blue")
-alice = AliceBlue.login_and_get_sessionID(
-    user_id=os.getenv("ALICE_USER_ID"),
-    password=os.getenv("ALICE_PASSWORD"),
-    twoFA = pyotp.TOTP(os.getenv("ALICE_TWO_FA")).now()
-    app_id=os.getenv("ALICE_APP_ID")
-)
-print("\U0001F7E2 Logged in")
-
-# --- TRADE TRACKING ---
-trade_count_ce = 0
-trade_count_pe = 0
-
-# --- INSTRUMENT FETCH ---
-def get_nifty_atm_option(is_call=True):
-    spot = float(alice.get_instrument_by_symbol('NSE', 'NIFTY').ltp)
-    atm_strike = int(round(spot / 50) * 50)
-    symbol = f"NIFTY{atm_strike}{'CE' if is_call else 'PE'}"
-    return alice.get_instrument_for_fno(symbol=symbol, exchange="NFO", expiry_date=None)
-
-# --- SIGNAL GENERATION ---
-def is_signal():
-    try:
-        now = dt.datetime.now(ist)
-        if not (entry_start_time <= now.time() <= entry_end_time):
-            return None
-
-        df_1m = pd.DataFrame(alice.get_historical(instrument="NIFTY", from_datetime=now - dt.timedelta(minutes=2), to_datetime=now, interval="minute")).tail(2)
-        df_5m = pd.DataFrame(alice.get_historical(instrument="NIFTY", from_datetime=now - dt.timedelta(minutes=10), to_datetime=now, interval="5minute")).tail(2)
-        df_15m = pd.DataFrame(alice.get_historical(instrument="NIFTY", from_datetime=now - dt.timedelta(minutes=30), to_datetime=now, interval="15minute")).tail(2)
-
-        cond1 = df_1m['close'].iloc[-1] > df_1m['close'].iloc[-2]
-        cond2 = df_5m['close'].iloc[-1] > df_5m['close'].iloc[-2]
-        cond3 = df_15m['close'].iloc[-1] > df_15m['close'].iloc[-2]
-
-        if cond1 and cond2 and cond3:
-            return True
-        return False
+        tg.send_message(chat_id=CHAT_ID, text=msg)
     except Exception as e:
-        print("Signal error:", e)
-        return False
+        logging.error(f"Failed to send Telegram message: {e}")
 
-# --- ORDER PLACEMENT ---
-def place_order(is_call):
-    global trade_count_ce, trade_count_pe
-    if (is_call and trade_count_ce >= max_trades_per_day) or (not is_call and trade_count_pe >= max_trades_per_day):
+def login():
+    try:
+        otp = TOTP(TOTP_SECRET).now()
+        session = AliceBlue.login_and_get_sessionID(
+            username=USER_ID,
+            password=API_SECRET,
+            twoFA=otp,
+            app_id="ALICEBLUE"
+        )
+        access_token = AliceBlue.get_access_token(session)
+        alice = AliceBlue(username=USER_ID, session_id=access_token)
+        logging.info("✅ Login successful")
+        send_alert("✅ Nifty Options Bot Logged In")
+        return alice
+    except Exception as e:
+        logging.error(f"Login failed: {e}")
+        send_alert(f"❌ Login failed: {e}")
+        return None
+
+def fetch_close(alice, symbol, tf):
+    try:
+        df = alice.get_historical(
+            instrument=alice.get_instrument_by_symbol('NSE', symbol),
+            from_datetime=datetime.now(IST).replace(hour=9, minute=15),
+            to_datetime=datetime.now(IST),
+            interval=tf
+        )
+        return df['close']
+    except Exception as e:
+        logging.error(f"Error fetching data: {e}")
+        return pd.Series()
+
+def trade_logic():
+    now = datetime.now(IST)
+    if not (now.hour >= 9 and now.minute >= 30 and now.hour <= 15):
         return
 
-    instrument = get_nifty_atm_option(is_call)
-    ltp = float(instrument.ltp)
-    sl = ltp - sl_points if is_call else ltp + sl_points
-    tp = ltp + tp_points if is_call else ltp - tp_points
+    try:
+        symbol = 'NIFTY'
+        timeframes = ['1Minute', '5Minute', '15Minute']
+        all_up = True
+        for tf in timeframes:
+            series = fetch_close(alice, symbol, tf)
+            if len(series) < 2 or series.iloc[-1] <= series.iloc[-2]:
+                all_up = False
+                break
 
-    alice.place_order(
-        transaction_type=AliceBlue.TRANSACTION_TYPE_BUY,
-        instrument=instrument,
-        quantity=lot_size,
-        order_type=AliceBlue.ORDER_TYPE_MARKET,
-        product_type=AliceBlue.PRODUCT_MIS,
-        price=0.0,
-        trigger_price=None,
-        stop_loss=sl,
-        square_off=tp,
-        trailing_sl=tsl_points,
-        is_amo=False
-    )
-
-    direction = 'CE' if is_call else 'PE'
-    send_alert(f"\u2705 Trade Executed: {direction}\nEntry: {ltp}\nSL: {sl}\nTP: {tp}")
-    if is_call:
-        trade_count_ce += 1
-    else:
-        trade_count_pe += 1
-
-# --- SCHEDULER ---
-def run_bot():
-    if is_signal():
-        if trade_count_ce <= trade_count_pe:
-            place_order(is_call=True)
-        else:
-            place_order(is_call=False)
+        if all_up:
+            # Check 1H open < close
+            hour_df = fetch_close(alice, symbol, '1Hour')
+            if hour_df.iloc[-1] <= hour_df.iloc[-2]:
+                return
+            send_alert("🚀 All TFs green. BUY SIGNAL!")
+    except Exception as e:
+        logging.error(f"Trade logic error: {e}")
 
 def health_check():
-    now = dt.datetime.now(ist).strftime("%H:%M:%S")
-    send_alert(f"\uD83D\uDC8A Health Check OK at {now}")
+    send_alert("✅ Bot is running fine @ " + str(datetime.now(IST).strftime('%H:%M:%S')))
 
-scheduler = BackgroundScheduler()
-scheduler.add_job(run_bot, 'interval', minutes=1)
-scheduler.add_job(health_check, 'interval', minutes=30)
-scheduler.start()
+def run_bot():
+    global alice
+    alice = login()
+    if alice is None:
+        return
 
-send_alert("\uD83D\uDE80 Nifty Options Bot Started Successfully")
+    scheduler = BackgroundScheduler(timezone=IST)
+    scheduler.add_job(run_bot, 'cron', hour=9, minute=0)  # relogin at 9:00 AM
+    scheduler.add_job(health_check, 'interval', minutes=60)
+    scheduler.add_job(trade_logic, 'interval', minutes=1)
+    scheduler.start()
+
+    logging.info("🚀 Bot Started")
+    send_alert("🚀 Nifty Options Bot Started on Render")
+
+if __name__ == "__main__":
+    run_bot()
