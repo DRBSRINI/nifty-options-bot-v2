@@ -36,7 +36,7 @@ print("\U0001F680 Logging in to Alice Blue")
 alice = AliceBlue.login_and_get_sessionID(
     user_id=os.getenv("ALICE_USER_ID"),
     password=os.getenv("ALICE_PASSWORD"),
-    twoFA=pyotp.TOTP(os.getenv("ALICE_TOTP")).now(),
+    twoFA = pyotp.TOTP(os.getenv("ALICE_TWO_FA")).now()
     app_id=os.getenv("ALICE_APP_ID")
 )
 print("\U0001F7E2 Logged in")
