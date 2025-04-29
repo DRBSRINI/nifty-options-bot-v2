@@ -16,15 +16,14 @@ def login():
     app_id = os.getenv("ALICE_APP_ID")
     api_secret = os.getenv("ALICE_API_SECRET")
 
-    # 👇 Instead of fetching TOTP, paste your manually generated OTP here
-    two_fa = "123456"  # <-- IMPORTANT: Replace 123456 with your fresh 6-digit OTP generated manually
+    two_fa = "XXXXXX"   # ← replace XXXXXX with your manual OTP
 
     print(f"DEBUG: Logging in with user_id={user_id}, app_id={app_id}")
 
     session_id = AliceBlue.login_and_get_sessionID(
         username=user_id,
         password=password,
-        two_fa = "448711",
+        twoFA=two_fa = "310195",
         app_id=app_id,
         api_secret=api_secret
     )
