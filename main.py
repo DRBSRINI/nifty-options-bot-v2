@@ -7,23 +7,24 @@ import os
 import pyotp
 from alice_blue import AliceBlue
 
+import os
+from alice_blue import AliceBlue
+
 def login():
     user_id = os.getenv("ALICE_USER_ID")
     password = os.getenv("ALICE_PASSWORD")
     app_id = os.getenv("ALICE_APP_ID")
     api_secret = os.getenv("ALICE_API_SECRET")
-    two_fa_secret = os.getenv("ALICE_TWO_FA")
 
-    # generate OTP from TOTP secret
-    totp = pyotp.TOTP(two_fa_secret)
-    two_fa_code = totp.now()
+    # 👇 Instead of fetching TOTP, paste your manually generated OTP here
+    two_fa = "123456"  # <-- IMPORTANT: Replace 123456 with your fresh 6-digit OTP generated manually
 
     print(f"DEBUG: Logging in with user_id={user_id}, app_id={app_id}")
 
     session_id = AliceBlue.login_and_get_sessionID(
         username=user_id,
         password=password,
-        twoFA=two_fa_code,  # send generated OTP
+        twoFA=two_fa = 369095
         app_id=app_id,
         api_secret=api_secret
     )
@@ -31,6 +32,8 @@ def login():
     alice = AliceBlue(user_id=user_id, session_id=session_id)
     print("✅ Successfully logged into Alice Blue")
     return alice
+
+       
 
 
 def run_bot():
