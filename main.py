@@ -1,84 +1,80 @@
+# main.py
+
 import os
 import time
-import logging
+import pytz
+import json
 import pyotp
+import logging
 import pandas as pd
 from datetime import datetime
-from alice_blue import AliceBlue
 from apscheduler.schedulers.background import BackgroundScheduler
+from alice_blue import AliceBlue
 
-# Setup Logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
 logger = logging.getLogger(__name__)
 
-# Load Environment Variables
+# Get environment variables
 APP_ID = os.getenv("ALICE_APP_ID")
 API_SECRET = os.getenv("ALICE_API_SECRET")
 USER_ID = os.getenv("ALICE_USER_ID")
 PASSWORD = os.getenv("ALICE_PASSWORD")
-TWO_FA_SECRET = os.getenv("ALICE_TWO_FA")
+TOTP_SECRET = os.getenv("ALICE_TWO_FA")
 REAL_MODE = os.getenv("REAL_MODE", "false").lower() == "true"
 
-# Telegram settings (Optional)
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-# Generate TOTP
-def generate_totp(secret_key):
-    totp = pyotp.TOTP(secret_key)
+def generate_otp():
+    totp = pyotp.TOTP(TOTP_SECRET)
     return totp.now()
 
-# Login to Alice Blue
-session_id = None
 def login():
-    global session_id
+    logger.info(f"DEBUG: Logging in with user_id={USER_ID}, app_id={APP_ID}")
     try:
-        totp_code = generate_totp(TWO_FA_SECRET)
-        logger.info(f"Generated OTP: {totp_code}")
-
+        otp = generate_otp()
+        logger.info(f"DEBUG: Generated OTP = {otp}")
         session = AliceBlue.login_and_get_sessionID(
             username=USER_ID,
             password=PASSWORD,
-            twoFA=totp_code,
+            twoFA=otp,
             app_id=APP_ID,
             api_secret=API_SECRET
         )
-        session_id = session
-        logger.info("✅ Successfully logged in to Alice Blue!")
-        return AliceBlue(username=USER_ID, session_id=session, app_id=APP_ID)
+        logger.info("✅ Login successful.")
+        return AliceBlue(username=USER_ID, session_id=session)
     except Exception as e:
-        logger.error(f"❌ Login Failed: {e}")
+        logger.error("❌ Login Failed: " + str(e))
         return None
 
-# Trading Logic (Dummy Placeholder)
 def run_trading_logic():
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info(f"[RUNNING] Trading logic at {now}")
+    logger.info("⚙️ Running trading logic...")
+    try:
+        # Sample check
+        now = datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%H:%M:%S")
+        logger.info(f"✅ Trading bot active at {now}")
+    except Exception as e:
+        logger.error(f"⚠️ Trading logic error: {e}")
 
-# Health Check
 def health_check():
-    logger.info("✅ Bot is running fine (Health Check)")
+    logger.info("🧠 Bot heartbeat... all systems nominal.")
 
-# Main Function
 def run_bot():
     alice = login()
     if alice is None:
-        logger.error("Login failed. Bot Stopped.")
+        logger.error("🛑 Bot Stopped: Login failed.")
         return
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(run_trading_logic, 'interval', minutes=1)
-    scheduler.add_job(health_check, 'interval', minutes=30)
+    scheduler.add_job(run_trading_logic, 'interval', minutes=1, id='run_trading_logic')
+    scheduler.add_job(health_check, 'interval', minutes=30, id='health_check')
     scheduler.start()
-
-    logger.info("🚀 Bot Started")
+    logger.info("🤖 Bot Started 🚀")
 
     try:
         while True:
-            time.sleep(60)
+            time.sleep(1)
     except (KeyboardInterrupt, SystemExit):
         scheduler.shutdown()
-        logger.info("🛑 Bot stopped manually.")
+        logger.info("Bot Stopped manually.")
 
 if __name__ == "__main__":
     run_bot()
