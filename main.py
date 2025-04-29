@@ -38,6 +38,7 @@ def login():
             username=USER_ID,
             password=API_SECRET,
             twoFA=otp,
+            api_secret=API_SECRET,  # use the same as password for simplicity
             app_id="ALICEBLUE"
         )
         access_token = AliceBlue.get_access_token(session)
@@ -49,6 +50,7 @@ def login():
         logging.error(f"Login failed: {e}")
         send_alert(f"❌ Login failed: {e}")
         return None
+
 
 def fetch_close(alice, symbol, tf):
     try:
