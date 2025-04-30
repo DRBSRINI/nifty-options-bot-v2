@@ -24,6 +24,9 @@ IST = pytz.timezone('Asia/Kolkata')
 USER_ID = os.getenv("ALICE_USER_ID")
 PASSWORD = os.getenv("ALICE_PASSWORD")
 TOTP_SECRET = os.getenv("ALICE_TOTP")
+if not TOTP_SECRET:
+    raise ValueError("Missing ALICE_TOTP in environment. Please check Render -> Environment tab.")
+
 APP_ID = os.getenv("ALICE_APP_ID")
 API_SECRET = os.getenv("ALICE_API_SECRET")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
