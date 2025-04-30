@@ -63,7 +63,12 @@ logger = logging.getLogger(__name__)
 # Get credentials from environment variables
 username = os.getenv("ALICE_USER_ID")
 password = os.getenv("ALICE_PASSWORD")
-totp_secret = os.getenv("ALICE_TWO_FA")
+totp_secret = os.getenv("ALICE_TOTP")
+if not totp_secret:
+    raise Exception("❌ Environment variable ALICE_TOTP not found!")
+
+totp = pyotp.TOTP(totp_secret).now()
+
 app_id = os.getenv("ALICE_APP_ID")
 api_secret = os.getenv("ALICE_API_SECRET")
 
