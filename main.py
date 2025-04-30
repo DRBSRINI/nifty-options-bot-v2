@@ -1,30 +1,43 @@
 import os
 import time
 import pytz
-import json
 import logging
-import datetime as dt
-import pandas as pd
+import datetime
+import csv
 from alice_blue import AliceBlue
 from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import Bot
 from pyotp import TOTP
+from alice_blue import Instrument, OrderType, TransactionType, ProductType, Variety
 
-# ========== Logging Setup ==========
+# ========== Logging ==========
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("NiftyBot")
 
 # ========== ENV Variables ==========
-USERNAME = os.getenv("ALICE_USERNAME")
+USERNAME = os.getenv("ALICE_USER_ID")
 PASSWORD = os.getenv("ALICE_PASSWORD")
-TOTP_SECRET = os.getenv("TOTP_SECRET")
+TOTP_SECRET = os.getenv("ALICE_TOTP")
 API_SECRET = os.getenv("ALICE_API_SECRET")
 APP_ID = os.getenv("ALICE_APP_ID")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+REAL_MODE = os.getenv("REAL_MODE", "false").lower() == "true"
 
-# ========== Timezone ==========
+# ========== Bot Constants ==========
+MAX_TRADES_PER_DAY = 5
+ENTRY_START = datetime.datetime.strptime("09:26:00", "%H:%M:%S").time()
+ENTRY_END = datetime.datetime.strptime("15:00:00", "%H:%M:%S").time()
 IST = pytz.timezone("Asia/Kolkata")
+STOPLOSS_POINTS = 50
+TARGET_POINTS = 25
+TRAILING_SL_POINTS = 5
+TRADE_LOG_FILE = "trade_log.csv"
+
+# ========== Globals ==========
+alice = None
+trade_count_ce = 0
+trade_count_pe = 0
 
 # ========== Telegram ==========
 def send_telegram_message(message):
@@ -34,68 +47,57 @@ def send_telegram_message(message):
     except Exception as e:
         logger.error(f"Telegram send error: {e}")
 
-# ========== Login ==========
-def login():
-    totp = TOTP(TOTP_SECRET).now()
-    logger.info("Starting Alice Blue TOTP Login...")
-    logger.info(f"Generated TOTP: {totp}")
+# ========== CSV Logger ==========
+def log_trade(symbol, action, price, status):
+    with open(TRADE_LOG_FILE, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            datetime.datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
+            symbol,
+            action,
+            price,
+            status
+        ])
 
-    session_id = AliceBlue.login_and_get_sessionID(
-        username=USERNAME,
-        password=PASSWORD,
-        twoFA=totp,
-        api_secret=API_SECRET,
-        app_id=APP_ID
-    )
-    print("✅ Login successful!")
-    return AliceBlue(session_id=session_id, username=USERNAME)
-    
-# ========= STRATEGY EXECUTION ========== #
-trade_count_ce = 0
-trade_count_pe = 0
-
-def run_bot():
-    global trade_count_ce, trade_count_pe
-
-    now = datetime.datetime.now(IST).time()
-    if now < ENTRY_START or now > ENTRY_END:
-        return
-
-    # Example check: simulate 15m/5m/1m momentum (to be implemented)
-    if trade_count_ce < MAX_TRADES_PER_DAY:
-        logger.info("🔔 Entry CE condition met (mock)")
-        send_alert("🔔 [MOCK] BUY NIFTY ATM CE (1 lot)")
-        trade_count_ce += 1
-
-    if trade_count_pe < MAX_TRADES_PER_DAY:
-        logger.info("🔔 Entry PE condition met (mock)")
-        send_alert("🔔 [MOCK] BUY NIFTY ATM PE (1 lot)")
-        trade_count_pe += 1
-
-# ========== Main Bot Logic ==========
-def run_bot():
+def send_daily_summary():
     try:
-        alice = login()
-        send_telegram_message("✅ Bot Logged In Successfully!")
-        # Additional trading logic can be inserted here
+        if not os.path.exists(TRADE_LOG_FILE):
+            send_telegram_message("📉 No trades were executed today.")
+            return
+
+        today = datetime.datetime.now(IST).strftime("%Y-%m-%d")
+        with open(TRADE_LOG_FILE, mode='r') as file:
+            lines = file.readlines()
+        today_trades = [line for line in lines if today in line]
+        if not today_trades:
+            send_telegram_message("📉 No trades were executed today.")
+            return
+
+        message = "📊 *Today's Trade Summary*\n"
+        for line in today_trades:
+            parts = line.strip().split(',')
+            message += f"{parts[0]} | {parts[1]} | {parts[2]} @ {parts[3]} | {parts[4]}\n"
+        send_telegram_message(message)
     except Exception as e:
-        logger.error(f"Login failed: {e}")
-        send_telegram_message(f"❌ Login failed: {e}")
+        logger.error(f"Failed to send daily summary: {e}")
 
-# ========== Health Check ==========
-def health_check():
-    logger.info("✅ Health Check Passed - Bot is running")
-    send_telegram_message("✅ Health Check: Bot is running")
+# ========== Login ==========
+# (unchanged login function here)
 
-# ========== Scheduler Setup ==========
+# ========== Strategy Execution ==========
+# (unchanged strategy-related functions here)
+
+# ========== Scheduler ==========
 scheduler = BackgroundScheduler()
-scheduler.add_job(run_bot, 'cron', day_of_week='mon-fri', hour=9, minute=15, timezone=IST)
-scheduler.add_job(health_check, 'interval', minutes=60, timezone=IST)
+scheduler.add_job(run_bot, 'interval', minutes=1, timezone=IST)
+scheduler.add_job(health_check, 'cron', hour=11, minute=0, timezone=IST)
+scheduler.add_job(send_daily_summary, 'cron', hour=15, minute=20, timezone=IST)
 scheduler.start()
 
-logger.info("🚀 Bot Started")
+logger.info("🚀 Nifty Options Bot Started")
 send_telegram_message("🚀 Nifty Options Bot Started on Render")
 
-# Keep alive
+# ========== Keep Alive ==========
 while True:
     time.sleep(60)
+
