@@ -86,18 +86,44 @@ def login():
     try:
         totp = TOTP(TOTP_SECRET).now()
         logger.info("Starting Alice Blue TOTP Login...")
-        session_id = AliceBlue.login_and_get_sessionID(
-            username=USERNAME,
-            password=PASSWORD,
-            twoFA=totp,
-            api_secret=API_SECRET,
-            app_id=APP_ID
+
+        import requests
+
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "userId": USERNAME,
+            "password": PASSWORD,
+            "twoFA": totp,
+            "vc": API_SECRET,
+            "appId": APP_ID,
+            "source": "API"
+        }
+
+        response = requests.post(
+            "https://ant.aliceblueonline.com/rest/AliceBlueAPIService/api/customer/login",
+            headers=headers,
+            json=payload
         )
+
+        data = response.json()
+
+        if "sessionID" not in data:
+            raise ValueError(f"Login failed: {data}")
+
+        session_id = data["sessionID"]
+        logger.info(f"AliceBlue session ID: {session_id}")
+
         return AliceBlue(session_id=session_id, username=USERNAME)
+
     except Exception as e:
         logger.error(f"Login failed: {e}")
         send_telegram_message(f"❌ Login Failed: {e}")
         return None
+
 
 # ========== Strategy Execution ==========
 def run_bot():
