@@ -48,18 +48,40 @@ def send_alert(msg):
 
 # ========== LOGIN ========== #
 def login():
-    global alice
-    otp = pyotp.TOTP(TOTP_KEY).now()
+    from alice_blue import AliceBlue
+import pyotp
+import os
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Get credentials from environment variables
+username = os.getenv("ALICE_USER_ID")
+password = os.getenv("ALICE_PASSWORD")
+totp_secret = os.getenv("ALICE_TWO_FA")
+app_id = os.getenv("ALICE_APP_ID")
+api_secret = os.getenv("ALICE_API_SECRET")
+
+# Generate TOTP
+totp = pyotp.TOTP(totp_secret).now()
+logger.info(f"Generated TOTP: {totp}")
+
+# Perform login
+try:
     session_id = AliceBlue.login_and_get_sessionID(
-        username=USER_ID,
-        password=PASSWORD,
-        twoFA=otp,
-        app_id=APP_ID,
-        api_secret=API_SECRET
+        username=username,
+        password=password,
+        twoFA=totp,
+        app_id=app_id,
+        api_secret=api_secret
     )
-    alice = AliceBlue(username=USER_ID, session_id=session_id)
-    logger.info("✅ Login successful")
-    send_alert("✅ Nifty Bot Logged in Successfully")
+    logger.info(f"Session ID: {session_id}")
+except Exception as e:
+    logger.error("Login failed", exc_info=True)
+    raise SystemExit("❌ Alice Blue login failed. Fix credentials or TOTP.")
+
 
 # ========== STRATEGY ========== #
 def get_atm_option(is_call):
