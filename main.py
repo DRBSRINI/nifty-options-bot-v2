@@ -83,20 +83,26 @@ def send_daily_summary():
 
 # ========== Login ==========
 def login():
-    totp = TOTP(TOTP_SECRET).now()
-    logger.info("Starting Alice Blue TOTP Login...")
-    logger.info(f"Generated TOTP: {totp}")
-
-    session_id = AliceBlue.login_and_get_sessionID(
-        username=USERNAME,
-        password=PASSWORD,
-        twoFA=totp,
-        api_secret=API_SECRET,
-        app_id=APP_ID
-    )
-    print("✅ Login successful!")
-    return AliceBlue(session_id=session_id, username=USERNAME)
-    
+    for attempt in range(3):
+        try:
+            totp = TOTP(TOTP_SECRET).now()
+            logger.info("Starting Alice Blue TOTP Login...")
+            logger.info(f"Using TOTP: {totp}")
+            logger.info(f"Using APP_ID: {APP_ID}")
+            logger.info(f"Using API_SECRET: {API_SECRET}")
+            session_id = AliceBlue.login_and_get_sessionID(
+                username=USERNAME,
+                password=PASSWORD,
+                twoFA=totp,
+                api_secret=API_SECRET,
+                app_id=APP_ID
+            )
+            return AliceBlue(session_id=session_id, username=USERNAME)
+        except Exception as e:
+            logger.error(f"Login attempt {attempt+1}/3 failed: {e}")
+            time.sleep(5)
+    send_telegram_message("❌ Login Failed after 3 attempts.")
+    return None
 
 # ========== Strategy Execution ==========
 def run_bot():
