@@ -1,79 +1,149 @@
 import os
-import time
 import pytz
-import json
+import time
+import pyotp
 import logging
-import datetime as dt
-import pandas as pd
+from datetime import datetime
 from alice_blue import AliceBlue
-from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import Bot
-from pyotp import TOTP
+from apscheduler.schedulers.background import BackgroundScheduler
 
-# ========== Logging Setup ==========
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# ========== CONFIG ========== #
+LIVE_MODE = True  # Toggle live/paper trading
+CAPITAL = 70000
+LOT_SIZE = 75
+MAX_TRADES_PER_DAY = 5
+STOPLOSS_POINTS = 50
+TARGET_POINTS = 25
+TRAILING_SL_POINTS = 5
+ENTRY_START = datetime.strptime("09:26:00", "%H:%M:%S").time()
+ENTRY_END = datetime.strptime("15:00:00", "%H:%M:%S").time()
+IST = pytz.timezone('Asia/Kolkata')
 
-# ========== ENV Variables ==========
-USERNAME = os.getenv("ALICE_USERNAME")
+# ========== ENV VARS ========== #
+USER_ID = os.getenv("ALICE_USER_ID")
 PASSWORD = os.getenv("ALICE_PASSWORD")
-TOTP_SECRET = os.getenv("TOTP_SECRET")
-API_SECRET = os.getenv("ALICE_API_SECRET")
+TOTP_KEY = os.getenv("ALICE_TWO_FA")
 APP_ID = os.getenv("ALICE_APP_ID")
+API_SECRET = os.getenv("ALICE_API_SECRET")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# ========== Timezone ==========
-IST = pytz.timezone("Asia/Kolkata")
+# ========== LOGGING ========== #
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("NiftyBot")
 
-# ========== Telegram ==========
-def send_telegram_message(message):
+# ========== GLOBALS ========== #
+alice = None
+trade_count_ce = 0
+trade_count_pe = 0
+bot = Bot(token=TELEGRAM_TOKEN)
+
+# ========== UTILITY ========== #
+def send_alert(msg):
     try:
-        bot = Bot(token=TELEGRAM_TOKEN)
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
     except Exception as e:
-        logger.error(f"Telegram send error: {e}")
+        logger.error(f"Telegram Error: {e}")
 
-# ========== Login ==========
+# ========== LOGIN ========== #
 def login():
-    totp = TOTP(TOTP_SECRET).now()
-    logger.info("Starting Alice Blue TOTP Login...")
-    logger.info(f"Generated TOTP: {totp}")
-
+    global alice
+    otp = pyotp.TOTP(TOTP_KEY).now()
     session_id = AliceBlue.login_and_get_sessionID(
-        username=USERNAME,
+        username=USER_ID,
         password=PASSWORD,
-        twoFA=totp,
-        api_secret=API_SECRET,
-        app_id=APP_ID
+        twoFA=otp,
+        app_id=APP_ID,
+        api_secret=API_SECRET
     )
-    print("✅ Login successful!")
-    return AliceBlue(session_id=session_id, username=USERNAME)
+    alice = AliceBlue(username=USER_ID, session_id=session_id)
+    logger.info("✅ Login successful")
+    send_alert("✅ Nifty Bot Logged in Successfully")
 
-# ========== Main Bot Logic ==========
-def run_bot():
-    try:
-        alice = login()
-        send_telegram_message("✅ Bot Logged In Successfully!")
-        # Additional trading logic can be inserted here
-    except Exception as e:
-        logger.error(f"Login failed: {e}")
-        send_telegram_message(f"❌ Login failed: {e}")
+# ========== STRATEGY ========== #
+def get_atm_option(is_call):
+    spot = float(alice.get_instrument_by_symbol("NSE", "NIFTY").ltp)
+    strike = round(spot / 50) * 50
+    symbol = f"NIFTY{strike}{'CE' if is_call else 'PE'}"
+    return alice.get_instrument_for_fno(symbol=symbol, exchange="NFO")
 
-# ========== Health Check ==========
+def check_momentum():
+    now = datetime.now(IST)
+    if not (ENTRY_START <= now.time() <= ENTRY_END):
+        return None
+
+    tf_list = ["minute", "5minute", "15minute", "hour"]
+    for tf in tf_list:
+        hist = alice.get_historical(
+            instrument=alice.get_instrument_by_symbol("NSE", "NIFTY"),
+            from_datetime=now.replace(hour=9, minute=15),
+            to_datetime=now,
+            interval=tf
+        )
+        if len(hist) < 2:
+            return None
+        if hist[-1]['close'] <= hist[-2]['close']:
+            return None
+    return True
+
+def place_order(is_call):
+    global trade_count_ce, trade_count_pe
+    if is_call and trade_count_ce >= MAX_TRADES_PER_DAY:
+        return
+    if not is_call and trade_count_pe >= MAX_TRADES_PER_DAY:
+        return
+
+    instrument = get_atm_option(is_call)
+    ltp = float(instrument.ltp)
+    sl = ltp - STOPLOSS_POINTS if is_call else ltp + STOPLOSS_POINTS
+    tp = ltp + TARGET_POINTS if is_call else ltp - TARGET_POINTS
+
+    if LIVE_MODE:
+        order = alice.place_order(
+            transaction_type=AliceBlue.TRANSACTION_TYPE_BUY,
+            instrument=instrument,
+            quantity=LOT_SIZE,
+            order_type=AliceBlue.ORDER_TYPE_MARKET,
+            product_type=AliceBlue.PRODUCT_MIS,
+            price=0.0,
+            trigger_price=None,
+            stop_loss=STOPLOSS_POINTS,
+            square_off=TARGET_POINTS,
+            trailing_sl=TRAILING_SL_POINTS,
+            is_amo=False
+        )
+    else:
+        order = {"mock_order": True, "price": ltp}
+
+    send_alert(f"📈 {'CE' if is_call else 'PE'} Order Placed @ {ltp}\nTP: {tp} SL: {sl}")
+    if is_call:
+        trade_count_ce += 1
+    else:
+        trade_count_pe += 1
+
+# ========== BOT LOOP ========== #
+def run_strategy():
+    if check_momentum():
+        if trade_count_ce <= trade_count_pe:
+            place_order(is_call=True)
+        else:
+            place_order(is_call=False)
+
 def health_check():
-    logger.info("✅ Health Check Passed - Bot is running")
-    send_telegram_message("✅ Health Check: Bot is running")
+    now = datetime.now(IST).strftime("%H:%M:%S")
+    send_alert(f"✅ Bot alive @ {now}")
 
-# ========== Scheduler Setup ==========
-scheduler = BackgroundScheduler()
-scheduler.add_job(run_bot, 'cron', day_of_week='mon-fri', hour=9, minute=15, timezone=IST)
-scheduler.add_job(health_check, 'interval', minutes=60, timezone=IST)
-scheduler.start()
+# ========== RUN ========== #
+def start_bot():
+    login()
+    scheduler = BackgroundScheduler(timezone=IST)
+    scheduler.add_job(run_strategy, 'interval', minutes=1)
+    scheduler.add_job(health_check, 'interval', minutes=30)
+    scheduler.start()
+    send_alert("🚀 Nifty Bot Started")
 
-logger.info("🚀 Bot Started")
-send_telegram_message("🚀 Nifty Options Bot Started on Render")
-
-# Keep alive
-while True:
-    time.sleep(60)
+if __name__ == "__main__":
+    start_bot()
+    while True:
+        time.sleep(60)
