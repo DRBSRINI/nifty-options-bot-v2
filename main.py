@@ -23,7 +23,7 @@ IST = pytz.timezone('Asia/Kolkata')
 # ========== ENV VARS ========== #
 USER_ID = os.getenv("ALICE_USER_ID")
 PASSWORD = os.getenv("ALICE_PASSWORD")
-TOTP_KEY = os.getenv("ALICE_TOTP")
+TOTP_SECRET = os.getenv("ALICE_TOTP")
 APP_ID = os.getenv("ALICE_APP_ID")
 API_SECRET = os.getenv("ALICE_API_SECRET")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
