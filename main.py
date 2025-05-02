@@ -1,200 +1,98 @@
 import os
-import time
-import pytz
-import json
-import logging
-import datetime as dt
+import pyotp
 from alice_blue import AliceBlue
-from apscheduler.schedulers.background import BackgroundScheduler
-from telegram import Bot
-from pyotp import TOTP
 
-# ========== Logging Setup ==========
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# ========== ENV Variables ==========
-USERNAME = os.getenv("ALICE_USERNAME")
-PASSWORD = os.getenv("ALICE_PASSWORD")
-TOTP_SECRET = os.getenv("TOTP_SECRET")
-API_SECRET = os.getenv("ALICE_API_SECRET")
-APP_ID = os.getenv("ALICE_APP_ID")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-# Trading configuration
-MAX_TRADES_PER_DAY = int(os.getenv("MAX_TRADES_PER_DAY", "2"))
-
-# ========== Timezone ==========
-IST = pytz.timezone("Asia/Kolkata")
-
-# ========== Telegram ==========
-def send_telegram_message(message):
-    try:
-        if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-            logger.warning("Telegram credentials not configured. Message not sent.")
-            return
-            
-        bot = Bot(token=TELEGRAM_TOKEN)
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-        logger.info(f"Telegram message sent: {message}")
-    except Exception as e:
-        logger.error(f"Telegram send error: {e}")
-
-# ========== Login ==========
 def login():
-    """
-    Login to Alice Blue using TOTP authentication
-    """
-    try:
-        if not USERNAME or not PASSWORD or not TOTP_SECRET or not API_SECRET or not APP_ID:
-            raise ValueError("Missing required environment variables for login")
-            
-        logger.info("Starting Alice Blue TOTP Login...")
-        totp = TOTP(TOTP_SECRET).now()
-        logger.info(f"Generated TOTP: {totp}")
-        
-        session_id = AliceBlue.login_and_get_sessionID(
-            username=USERNAME,
-            password=PASSWORD,
-            twoFA=totp,
-            api_secret=API_SECRET,
-            app_id=APP_ID
-        )
-        
-        logger.info("✅ Login successful!")
-        send_telegram_message("✅ Successfully logged in to Alice Blue")
-        
-        return AliceBlue(session_id=session_id, username=USERNAME)
-    except Exception as e:
-        error_msg = f"Login failed: {str(e)}"
-        logger.error(error_msg)
-        send_telegram_message(f"❌ {error_msg}")
-        raise
+    user_id = os.getenv("ALICE_USER_ID")
+    password = os.getenv("ALICE_PASSWORD")
+    app_id = os.getenv("ALICE_APP_ID")
+    api_secret = os.getenv("ALICE_API_SECRET")
+    totp_secret = os.getenv("ALICE_TWO_FA")
 
-# ========== Trading Hours ==========
-def is_market_hour():
-    """Check if current time is within market trading hours"""
-    now = dt.datetime.now(IST)
-    
-    # Check if it's a weekday (0 is Monday, 6 is Sunday)
-    if now.weekday() > 4:  # Saturday or Sunday
-        return False
-    
-    # Define market hours (9:15 AM to 3:30 PM)
-    market_start = dt.time(9, 15, 0)
-    market_end = dt.time(15, 30, 0)
-    
-    current_time = now.time()
-    return market_start <= current_time <= market_end
+    # Generate dynamic OTP from TOTP key
+    totp = pyotp.TOTP(totp_secret)
+    otp_now = totp.now()
 
-# ========== Strategy Execution ==========
-trade_count_ce = 0
-trade_count_pe = 0
+    print(f"DEBUG: Logging in with user_id={user_id}, app_id={app_id}")
+    print(f"DEBUG: Generated OTP = {otp_now}")
 
-def run_strategy(alice):
-    """Execute the trading strategy"""
-    global trade_count_ce, trade_count_pe
+    session_id = AliceBlue.login_and_get_sessionID(
+        username=user_id,
+        password=password,
+        twoFA=otp_now,
+        app_id=app_id,
+        api_secret=api_secret
+    )
+
+    alice = AliceBlue(user_id=user_id, session_id=session_id)
+    print("✅ Successfully logged into Alice Blue")
+    return alice
     
-    if not is_market_hour():
-        logger.info("Outside market hours. Strategy not executed.")
+    Strategy Execution
+    now = datetime.datetime.now(IST).time()
+    if not (ENTRY_START <= now <= ENTRY_END):
         return
-    
-    try:
-        logger.info("Running trading strategy...")
-        
-        # Here you would implement your actual trading logic
-        # This is a placeholder for demonstration
-        
+
+    hist_data = kite.historical_data(instrument_token=256265, interval='minute', from_date=datetime.datetime.now() - datetime.timedelta(minutes=60), to_date=datetime.datetime.now())
+    df = pd.DataFrame(hist_data)
+
+    if df.empty or len(df) < 15:
+        return
+
+    close_1m = df.iloc[-1]['close']
+    close_1m_prev = df.iloc[-2]['close']
+    close_5m = df.iloc[-5]['close']
+    close_5m_prev = df.iloc[-6]['close']
+    close_15m = df.iloc[-15]['close']
+    close_15m_prev = df.iloc[-16]['close']
+
+    def rsi_calc(closes, period=14):
+        deltas = pd.Series(closes).diff().dropna()
+        gain = deltas[deltas > 0].sum() / period
+        loss = -deltas[deltas < 0].sum() / period
+        rs = gain / loss if loss != 0 else 0
+        return 100 - (100 / (1 + rs))
+
+    rsi_val = rsi_calc(df['close'].tolist()[-15:])
+
+    if close_1m > close_1m_prev and close_5m > close_5m_prev and close_15m > close_15m_prev and 30 < rsi_val < 60:
+        atm_strike = round(close_1m / 50) * 50
+        price_with_buffer = round(close_1m + ORDER_BUFFER, 2)
+
         if trade_count_ce < MAX_TRADES_PER_DAY:
-            logger.info("🔔 Entry CE condition met (mock)")
-            send_telegram_message("🔔 [MOCK] BUY NIFTY ATM CE (1 lot)")
+            symbol_ce = f"NIFTY{atm_strike}CE"
+            if REAL_MODE:
+                kite.place_order(
+                    variety=kite.VARIETY_REGULAR,
+                    exchange=kite.EXCHANGE_NFO,
+                    tradingsymbol=symbol_ce,
+                    transaction_type=kite.TRANSACTION_TYPE_BUY,
+                    quantity=75,
+                    order_type=kite.ORDER_TYPE_LIMIT,
+                    product=kite.PRODUCT_MIS,
+                    price=price_with_buffer
+                )
             trade_count_ce += 1
-            
+            send_telegram_message(f"✅ CE Limit Buy Executed: {symbol_ce} @ {price_with_buffer}")
+            log_trade(symbol_ce, "BUY CE", price_with_buffer, "EXECUTED")
+
         if trade_count_pe < MAX_TRADES_PER_DAY:
-            logger.info("🔔 Entry PE condition met (mock)")
-            send_telegram_message("🔔 [MOCK] BUY NIFTY ATM PE (1 lot)")
+            symbol_pe = f"NIFTY{atm_strike}PE"
+            if REAL_MODE:
+                kite.place_order(
+                    variety=kite.VARIETY_REGULAR,
+                    exchange=kite.EXCHANGE_NFO,
+                    tradingsymbol=symbol_pe,
+                    transaction_type=kite.TRANSACTION_TYPE_BUY,
+                    quantity=75,
+                    order_type=kite.ORDER_TYPE_LIMIT,
+                    product=kite.PRODUCT_MIS,
+                    price=price_with_buffer
+                )
             trade_count_pe += 1
-            
-    except Exception as e:
-        error_msg = f"Strategy execution error: {str(e)}"
-        logger.error(error_msg)
-        send_telegram_message(f"❌ {error_msg}")
+            send_telegram_message(f"✅ PE Limit Buy Executed: {symbol_pe} @ {price_with_buffer}")
+            log_trade(symbol_pe, "BUY PE", price_with_buffer, "EXECUTED")
 
-# ========== Main Bot Logic ==========
-def run_bot():
-    """Main function to run the trading bot"""
-    try:
-        logger.info("Starting bot execution...")
-        alice = login()
-        run_strategy(alice)
-    except Exception as e:
-        error_msg = f"Bot execution failed: {str(e)}"
-        logger.error(error_msg)
-        send_telegram_message(f"❌ {error_msg}")
-
-# ========== Reset Daily Counters ==========
-def reset_daily_counters():
-    """Reset trade counters at the start of the day"""
-    global trade_count_ce, trade_count_pe
-    trade_count_ce = 0
-    trade_count_pe = 0
-    logger.info("Daily trade counters reset")
-    send_telegram_message("🔄 Daily trade counters reset")
-
-# ========== Health Check ==========
-def health_check():
-    """Send a health check message to confirm the bot is running"""
-    logger.info("✅ Health Check Passed - Bot is running")
-    send_telegram_message("✅ Health Check: Bot is running")
-
-# ========== Main Execution ==========
-if __name__ == "__main__":
-    try:
-        # Initial notification
-        logger.info("🚀 Bot initialization started")
-        send_telegram_message("🚀 Nifty Options Bot Starting on Render")
-        
-        # Set up the scheduler
-        scheduler = BackgroundScheduler()
-        
-        # Schedule main trading function (9:15 AM IST on weekdays)
-        scheduler.add_job(run_bot, 'cron', day_of_week='mon-fri', hour=9, minute=15, timezone=IST)
-        
-        # Schedule additional runs if needed
-        # scheduler.add_job(run_bot, 'cron', day_of_week='mon-fri', hour=10, minute=30, timezone=IST)
-        # scheduler.add_job(run_bot, 'cron', day_of_week='mon-fri', hour=13, minute=45, timezone=IST)
-        
-        # Reset counters at 9:00 AM (before market opens)
-        scheduler.add_job(reset_daily_counters, 'cron', day_of_week='mon-fri', hour=9, minute=0, timezone=IST)
-        
-        # Hourly health check
-        scheduler.add_job(health_check, 'interval', hours=1, timezone=IST)
-        
-        # Start the scheduler
-        scheduler.start()
-        logger.info("✅ Scheduler started successfully")
-        
-        # Initial login to verify credentials
-        try:
-            alice = login()
-            logger.info("Initial login successful")
-        except Exception as e:
-            logger.error(f"Initial login failed: {e}")
-            send_telegram_message(f"⚠️ Initial login failed. Will retry at scheduled time. Error: {e}")
-        
-        # Keep the script running
-        logger.info("Bot is now running...")
-        send_telegram_message("✅ Nifty Options Bot is now active and monitoring the market")
-        
-        while True:
-            time.sleep(60)
-            
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot shutdown initiated")
-        send_telegram_message("🛑 Bot is shutting down")
-        scheduler.shutdown()
-    except Exception as e:
-        error_msg = f"Critical error: {str(e)}"
-        logger.error(error_msg)
-        send_telegram_message(f"❌ {error_msg}")
+except Exception as e:
+    logger.error(f"Login or execution failed: {e}")
+    send_telegram_message(f"❌ Login/Execution Failed: {e}")
