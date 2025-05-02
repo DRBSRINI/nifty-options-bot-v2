@@ -28,7 +28,7 @@ def login():
     print("✅ Successfully logged into Alice Blue")
     return alice
     
-    Strategy Execution
+    print("Strategy Execution")
     now = datetime.datetime.now(IST).time()
     if not (ENTRY_START <= now <= ENTRY_END):
         return
