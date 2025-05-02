@@ -4,7 +4,21 @@ import datetime
 import pandas as pd
 from alice_blue import AliceBlue
 
-# Login block (unchanged)
+# === Constants (configure these as needed) ===
+ENTRY_START = datetime.time(9, 20)
+ENTRY_END = datetime.time(15, 15)
+ORDER_BUFFER = 5
+MAX_TRADES_PER_DAY = 2
+REAL_MODE = False  # set to True for live trading
+
+# === Dummy functions (replace with your real implementations) ===
+def send_telegram_message(message):
+    print(f"Telegram: {message}")
+
+def log_trade(symbol, action, price, status):
+    print(f"Log: {symbol}, {action}, {price}, {status}")
+
+# === Login function ===
 def login():
     user_id = os.getenv("ALICE_USER_ID")
     password = os.getenv("ALICE_PASSWORD")
@@ -12,7 +26,6 @@ def login():
     api_secret = os.getenv("ALICE_API_SECRET")
     totp_secret = os.getenv("ALICE_TWO_FA")
 
-    # Generate dynamic OTP from TOTP key
     totp = pyotp.TOTP(totp_secret)
     otp_now = totp.now()
 
@@ -31,24 +44,7 @@ def login():
     print("✅ Successfully logged into Alice Blue")
     return alice
 
-# Constants and settings
-ENTRY_START = datetime.time(9, 30)
-ENTRY_END = datetime.time(15, 15)
-ORDER_BUFFER = 2  # example buffer value
-MAX_TRADES_PER_DAY = 3
-REAL_MODE = True
-
-trade_count_ce = 0
-trade_count_pe = 0
-
-# Dummy logger and Telegram functions (replace with real ones)
-def send_telegram_message(message):
-    print(f"[Telegram] {message}")
-
-def log_trade(symbol, side, price, status):
-    print(f"[Log] {symbol} {side} at {price} - {status}")
-
-# RSI calculation function
+# === RSI Calculation ===
 def rsi_calc(closes, period=14):
     deltas = pd.Series(closes).diff().dropna()
     gain = deltas[deltas > 0].sum() / period
@@ -56,14 +52,10 @@ def rsi_calc(closes, period=14):
     rs = gain / loss if loss != 0 else 0
     return 100 - (100 / (1 + rs))
 
-# Main strategy execution
-def execute_strategy(kite):
-    print("# Strategy Execution")
-    IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-    now = datetime.datetime.now(IST).time()
-
+# === Strategy Execution ===
+def strategy_execution(kite, trade_count_ce, trade_count_pe):
+    now = datetime.datetime.now().time()
     if not (ENTRY_START <= now <= ENTRY_END):
-        print("Outside entry window, skipping strategy.")
         return
 
     hist_data = kite.historical_data(
@@ -74,8 +66,7 @@ def execute_strategy(kite):
     )
     df = pd.DataFrame(hist_data)
 
-    if df.empty or len(df) < 15:
-        print("Not enough data, skipping strategy.")
+    if df.empty or len(df) < 16:
         return
 
     close_1m = df.iloc[-1]['close']
@@ -87,12 +78,10 @@ def execute_strategy(kite):
 
     rsi_val = rsi_calc(df['close'].tolist()[-15:])
 
-    global trade_count_ce, trade_count_pe
-
-    atm_strike = round(close_1m / 50) * 50
-    price_with_buffer = round(close_1m + ORDER_BUFFER, 2)
-
     if close_1m > close_1m_prev and close_5m > close_5m_prev and close_15m > close_15m_prev and 30 < rsi_val < 60:
+        atm_strike = round(close_1m / 50) * 50
+        price_with_buffer = round(close_1m + ORDER_BUFFER, 2)
+
         if trade_count_ce < MAX_TRADES_PER_DAY:
             symbol_ce = f"NIFTY{atm_strike}CE"
             if REAL_MODE:
@@ -124,4 +113,16 @@ def execute_strategy(kite):
                     price=price_with_buffer
                 )
             trade_count_pe += 1
-            send_telegram_message(f"✅ PE Limit Buy Executed: {symbol_pe} @_
+            send_telegram_message(f"✅ PE Limit Buy Executed: {symbol_pe} @ {price_with_buffer}")
+            log_trade(symbol_pe, "BUY PE", price_with_buffer, "EXECUTED")
+
+# === Main execution ===
+if __name__ == "__main__":
+    try:
+        alice = login()
+        trade_count_ce = 0
+        trade_count_pe = 0
+        strategy_execution(alice, trade_count_ce, trade_count_pe)
+    except Exception as e:
+        print(f"❌ Login or execution failed: {e}")
+        send_telegram_message(f"❌ Login/Execution Failed: {e}")
